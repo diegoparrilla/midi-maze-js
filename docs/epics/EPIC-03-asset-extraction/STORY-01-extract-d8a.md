@@ -2,7 +2,7 @@
 id: STORY-01
 epic: EPIC-03
 title: Extract .D8A assets (sine table, ball & face shapes, title screens)
-status: todo
+status: done
 ---
 
 ## Goal
@@ -12,12 +12,13 @@ extracted from `MIDIMAZE.PD/MIDIMAZE.D8A` into committed, web-loadable asset fil
 
 ## Tasks
 
-- [ ] Read `README/D8AFileFormat.md` and `read_d8a.py`; document the offsets used
-- [ ] Export the sine table (first quarter, 65 words, `sin*256`) to a data file
-- [ ] Export the 24 ball/body shapes (used for players *and* shots — no face)
-- [ ] Export the 20 face images and the 32-entry direction→face index
-- [ ] (Bonus) Export the colour title screen (needs `decomp.c` decompression)
-- [ ] Place assets under `src/assets/` and record provenance/licence note
+- [x] Read `README/D8AFileFormat.md` and `read_d8a.py`; document the offsets used
+      (`scripts/extract-assets.ts` header + `docs/reference/golden-master.md`)
+- [x] Export the sine table (first quarter, 65 words, `sin*256`) to a data file
+- [x] Export the 24 ball/body shapes (used for players *and* shots — no face)
+- [x] Export the 24×20 face images (1bpp word rows; `face_shape_tab` lands in EPIC-07)
+- [ ] (Bonus) Export the colour title screen (needs `convert_title` RLE decode) — deferred
+- [x] Place assets under `src/assets/generated/`; raw originals vendored in `assets-src/`
 
 ## Acceptance
 

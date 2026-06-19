@@ -2,7 +2,7 @@
 id: STORY-02
 epic: EPIC-03
 title: Load the .MAZ maze to a canonical grid
-status: todo
+status: done
 ---
 
 ## Goal
@@ -12,12 +12,12 @@ engine can use — matching `loadmaze.c`, the format the game we are porting use
 
 ## Tasks
 
-- [ ] Port `.MAZ` load (`loadmaze.c`): first 2 bytes = ASCII size digits, then
-      `maze_size+2`-char rows of `X` (wall) / `.` (empty) with CR/LF handling
-- [ ] Map to `MAZE_FIELD_WALL (1)` / `MAZE_FIELD_EMPTY (-1)`; out-of-bounds =
-      1×1 checkerboard (`maze_obj.c`)
-- [ ] Use `MIDIMAZE.PD/MIDIMAZE.MAZ` (+ a few from `MIDIMAZE.PD/MAZES/`) as fixtures
-- [ ] Emit a canonical maze artifact (JSON grid + size) committed to the repo
+- [x] Port `.MAZ` load (`loadmaze.c`): first 2 bytes = ASCII size digits, then
+      `maze_size+2`-char rows of `X` (wall) / `.` (empty) with CR/LF handling (`src/maze.ts`)
+- [x] Map to `MAZE_FIELD_WALL (1)` / `MAZE_FIELD_EMPTY (-1)`; out-of-bounds =
+      1×1 checkerboard (`maze_obj.c`, `getMazeData`)
+- [x] Use `MIDIMAZE.MAZ` (+ `BIGSTART`, `HUDSON`) vendored in `assets-src/mazes/`
+- [x] Emit a canonical maze artifact (JSON grid + size) to `src/assets/generated/mazes/`
 - [ ] (Optional, later) `.MZE` (MIDI Maze 2) importer via `read_MZE.py` semantics
       — separate format, not used by the original game
 

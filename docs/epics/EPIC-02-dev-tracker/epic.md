@@ -2,7 +2,7 @@
 id: EPIC-02
 iteration: 1
 title: Development tracker
-status: in-progress
+status: done
 ---
 
 ## Goal
