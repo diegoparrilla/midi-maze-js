@@ -2,7 +2,7 @@
 id: EPIC-05
 iteration: 2
 title: Maze model & loader
-status: todo
+status: done
 ---
 
 ## Goal

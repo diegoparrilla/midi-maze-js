@@ -2,7 +2,7 @@
 id: EPIC-10
 iteration: 3
 title: Input system
-status: todo
+status: done
 ---
 
 ## Goal
