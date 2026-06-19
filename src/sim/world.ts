@@ -90,4 +90,24 @@ export class World {
     if (cell < PLAYER_MAX_COUNT) this.players[cell]!.ply_plist = newObjectIndex;
     else this.players[cell - PLAYER_MAX_COUNT]!.ply_slist = newObjectIndex;
   }
+
+  /** set_all_player: rebuild the maze object map from current player/shot positions. */
+  setAllPlayer(): void {
+    while (this.objektAnz > 0) {
+      this.objektAnz--;
+      const slot = this.objectTable[this.objektAnz]!;
+      this.setMazeData(slot.y, slot.x, MAZE_FIELD_EMPTY);
+    }
+    for (let i = 0; i < this.playerAndDroneCount; i++) {
+      const p = this.players[i]!;
+      if (p.ply_lives > 0 || p.ply_hitflag) {
+        this.setObject(i, p.ply_y, p.ply_x);
+        p.ply_plist = MAZE_FIELD_EMPTY;
+      }
+      if (p.ply_shoot > 0) {
+        this.setObject(i + PLAYER_MAX_COUNT, p.ply_shooty, p.ply_shootx);
+        p.ply_slist = MAZE_FIELD_EMPTY;
+      }
+    }
+  }
 }

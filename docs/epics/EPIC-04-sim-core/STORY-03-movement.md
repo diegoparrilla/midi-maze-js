@@ -2,7 +2,7 @@
 id: STORY-03
 epic: EPIC-04
 title: Movement — turn, forward, collision
-status: todo
+status: done
 ---
 
 ## Goal
@@ -12,10 +12,12 @@ exactly.
 
 ## Tasks
 
-- [ ] Turn (`PLAYER_MOTION_ROTATE`), forward/back via `xy_speed_table`
-- [ ] Wall collision / clamp (`PLAYER_WALL_DISTANCE`, `get_maze_data`)
-- [ ] Player–player collision (`PLAYER_RADIUS`, the 5×5 cell scan, sliding resolve)
-- [ ] Golden trace: scripted joystick → per-tick x/y/dir vs the C harness
+- [x] Turn (`PLAYER_MOTION_ROTATE`), forward/back via `xy_speed_table` (`src/sim/movement.ts`)
+- [x] Wall collision / clamp + outside-corner slide + boxed-in escape (`get_maze_data`)
+- [x] Player–player collision (`PLAYER_RADIUS`, 3×3 cell scan, sliding resolve);
+      `World.setAllPlayer` rebuilds the object map
+- [x] Golden traces vs the C harness: spin, forward-east, wall-north, collision-west
+      (`src/sim/movement.test.ts`); verbatim `move_player`/`move_shoot` now in `mmref.c`
 
 ## Acceptance
 
