@@ -17,6 +17,12 @@ export default [
       // TypeScript (tsc --noEmit in `build`) resolves identifiers; core no-undef
       // misfires on DOM/global types, so defer to the compiler.
       'no-undef': 'off',
+      // Allow intentionally-unused, underscore-prefixed args (e.g. params kept to
+      // match an original C signature before a later epic uses them).
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
     },
   },
 ];

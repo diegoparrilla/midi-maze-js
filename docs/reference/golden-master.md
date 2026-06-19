@@ -44,3 +44,30 @@ Movement, shot, and shared-RNG traces are only useful once `move_player`,
 
 The original compiles on macOS (`README.md`), but as an Xcode AppKit app — hence
 the carve-out into a standalone CLI rather than reusing the app target.
+
+## Done in EPIC-04: the deterministic core
+
+The harness (`scripts/cref/mmref.c`, `npm run cref`) now carries verbatim copies of
+`muls_divs`, `fast_sin/cos`, `rotate2d`, `calc_sin_table`, `_random/_rnd`,
+`get/set_maze_data`, `set_object`, `set_all_player`, `hunt_ply_pos`,
+`init_all_player`, `move_player`, and `move_shoot`, plus a full `maingame`-style tick
+runner. The TypeScript in `src/sim/` matches it bit-for-bit across: primitives,
+placement, movement/collision, combat (incl. RNG respawn), and a 3-player 16-tick
+match (`src/sim/*.test.ts`).
+
+## Determinism contract for the network layer (EPIC-14)
+
+The sim core is a pure function of shared state. The network layer must only:
+
+1. Establish identical shared state on every node before the game: the **maze grid**,
+   the **game config** (reload/regen/revive/reviveLives/friendlyFire/teamFlag), and
+   the **RNG seed** — all carried in `MIDI_SEND_DATA` (EPIC-13). Then call
+   `initAllPlayer(world, count)` everywhere (same seed → identical placement).
+2. Each tick, gather exactly **one joystick byte per player** (the circulating ring
+   bytes) into `joyTable[0..count-1]` and call `step(world, joyTable)`. No world
+   state is ever transmitted — every node recomputes it.
+
+Invariants the transport must preserve (or desync follows): the joystick stream is
+byte-exact and in player order; membership/`count` is frozen at game start (C-04);
+nobody mutates `world` outside `step()`. `step()` itself is deterministic — given the
+same `joyTable` sequence it reproduces the C `maingame` loop exactly.

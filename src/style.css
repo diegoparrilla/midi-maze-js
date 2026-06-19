@@ -21,4 +21,15 @@ body {
 #screen {
   image-rendering: pixelated;
   display: block;
+  cursor: pointer;
+}
+
+#status {
+  position: fixed;
+  bottom: 6px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font: 12px monospace;
+  color: #8a8a8a;
 }
