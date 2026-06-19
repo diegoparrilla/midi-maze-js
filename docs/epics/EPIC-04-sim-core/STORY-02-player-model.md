@@ -2,7 +2,7 @@
 id: STORY-02
 epic: EPIC-04
 title: Player & shot state model + initialisation
-status: todo
+status: done
 ---
 
 ## Goal
@@ -12,11 +12,12 @@ nodes start identically from the shared seed.
 
 ## Tasks
 
-- [ ] `PLAYER_DATA` fields (pos x/y, dir, lives, reload, hitflag, score, gunman,
-      team, shot x/y/dir/active, list links) per `globals.h`
-- [ ] `init_all_player` / `hunt_ply_pos`: random empty-cell placement via the shared
-      RNG, with the decreasing min-distance retry loop (`setup.c`/`gamelogi.c`)
-- [ ] Golden vector: from a known seed + maze, the initial player positions
+- [x] `PLAYER_DATA` fields (`src/sim/player.ts`); mutable maze + object placement
+      (`src/sim/world.ts`: `getMazeData`/`setMazeData`/`setObject`)
+- [x] `init_all_player` / `hunt_ply_pos` (`src/sim/setup.ts`): RNG-driven placement
+      with the decreasing min-distance retry loop
+- [x] Golden vector: initial positions + facings vs the C harness (extended
+      `mmref.c` with a shared maze fixture; `src/sim/setup.test.ts`)
 
 ## Acceptance
 
