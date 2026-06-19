@@ -1,5 +1,6 @@
 import './style.css';
 import midimazeRaw from './assets/generated/mazes/midimaze.json';
+import { drawCrosshair } from './render/hud';
 import { drawMap2D } from './render/map2d';
 import { drawView3D } from './render/view3d';
 import {
@@ -75,8 +76,12 @@ function frame(): void {
   const joyTable = [joyByte(), 0, 0]; // only player 0 (the camera) is controlled
   step(world, joyTable);
   const p = world.players[0]!;
-  if (mapMode) drawMap2D(ctx!, world);
-  else drawView3D(ctx!, world, p.ply_y, p.ply_x, p.ply_dir, 0);
+  if (mapMode) {
+    drawMap2D(ctx!, world);
+  } else {
+    drawView3D(ctx!, world, p.ply_y, p.ply_x, p.ply_dir, 0);
+    if (p.ply_reload === 0 && p.ply_lives > 0) drawCrosshair(ctx!, 0);
+  }
   if (status) {
     status.textContent = `first-person · field (${p.ply_x >> 7},${p.ply_y >> 7}) dir ${p.ply_dir} · arrows move/turn, space fire, M = map`;
   }
