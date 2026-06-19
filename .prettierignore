@@ -4,4 +4,5 @@ node_modules/
 **/*.md
 # Generated assets (npm run assets) and vendored originals are not hand-formatted.
 src/assets/generated/
+src/sim/golden/
 assets-src/
