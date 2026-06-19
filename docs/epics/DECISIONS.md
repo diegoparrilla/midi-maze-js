@@ -1,0 +1,29 @@
+# Decisions
+
+Cross-cutting decisions (`D-NN`) and hard constraints (`C-NN`) referenced by
+stories. Status: `accepted` | `proposed` | `open`.
+
+## Decisions
+
+| ID | Decision | Status |
+| --- | --- | --- |
+| D-01 | **Wire-faithful interop.** The browser speaks the original MIDI Maze byte protocol exactly, so a browser player can share one orchestrator ring with a real Atari ST / Hatari. | accepted |
+| D-02 | **Lock-step deterministic simulation.** Only the 1-byte joystick state per player per tick travels the wire. All world state (positions, angles, shots, hits, kills, respawns) is recomputed locally and identically on every node from: the shared maze, the shared RNG seed, and the shared joystick stream. See `gamelogi.c`, `rnd.c`, `maingame.c`. | accepted |
+| D-03 | **Stack: TypeScript + Vite + Vitest**, built to a single static page deployable anywhere and launchable from any mobile/desktop browser. | accepted |
+| D-04 | **Pixel-faithful 320×200 colour renderer.** Reproduce the original colour-mode look (160×101 view window, perspective wall trapezoids, distance-scaled sprites), integer-upscaled to the screen. The 640×400 mono mode is out of scope. | accepted |
+| D-05 | **Browser supports both MASTER and SLAVE roles.** A room of only browsers is self-sufficient (one is master, runs menus + maze select + start); a browser can also join a ring mastered by a real ST. | accepted |
+| D-06 | **Extract & vendor original assets** from `MIDIMAZE.PD/MIDIMAZE.D8A` via `read_d8a.py`: 24 ball/body shapes + 20 face-rotation images (selected by a 32-entry direction→face table), the 65-word quarter-wave sine table (`sin*256`), and the colour/mono title screens (compressed). **Sounds are NOT in the `.D8A`** — they are chip-synthesised in `sound.c` (handled in EPIC-21), not extracted. | accepted |
+| D-07 | **Golden-master testing.** The original C compiles/runs on macOS and ships Python tooling (`read_d8a.py`) plus a plain `.MAZ` text loader (`loadmaze.c`); we generate reference vectors (maze grid, sine table, movement/shot traces) and assert the TypeScript sim matches them bit-for-bit. This is the primary guard against desync. | accepted |
+| D-08 | **Transport = WebSocket to the md-MIDI2IP orchestrator** (`--ws`, default port 5006). The orchestrator relays opaque bytes around a ring (`OUT(N) → IN(N+1)`), max 16, optional private rooms via `Authorization: Bearer <key>`. The browser's native `WebSocket` handles RFC 6455 framing; binary frames carry raw MIDI bytes. | accepted |
+| D-09 | **Integer fixed-point sim math, no floats in the core.** Positions in 1/256-cell units (`MAZE_CELL_SIZE 256`), directions 0–255 (256 = 360°), sin/cos via the original table. Mirrors the 68000 16-bit integer math to keep determinism. | accepted |
+| D-10 | **Colour mode only for v1.** Defer the mono 640×400 path; it shares the sim but doubles render/sprite work. | accepted |
+| D-11 | **Master election over the orchestrator (spike result).** The orchestrator is a *pure dumb relay* — it does NOT arbitrate master (its `--coordinate` protection was retired once firmware owned election; `next_player` self-echoes a ring of one; otherwise election "emerges from correct ring routing", ORCHESTRATOR-CONTRACT). So: (a) make election deterministic via explicit **Host (master) / Join (slave)** roles in the UI rather than the fragile auto-election storm; (b) still implement the faithful state machine for wire-compat — a node emits `0x00` *once*, master if it returns (self-echo when alone, else round the ring), **slave if it *receives* `0x00`** (and forwards control bytes); **master identity = the originator of `COUNT-PLAYERS` (0x80)**, the signal the orchestrator badges; (c) exactly one master per ring — in a mixed ring with real STs the browser defaults to slave unless designated host (validated in EPIC-18); (d) ring-of-one self-echo lets a single browser elect itself for solo/networked smoke tests. | accepted |
+
+## Constraints
+
+| ID | Constraint |
+| --- | --- |
+| C-01 | **Lock-step latency.** Each tick blocks on receiving the prior player's byte. Per-tick work (sim + render) must fit the budget so the ring does not stall; the orchestrator's `get_midi` timeout is unforgiving (`readmidi.c`, `BUGFIX_MIDI_TIMEOUT`). |
+| C-02 | **Bit-identical simulation.** Any divergence from the original integer math desyncs the browser from real hardware. No floats, no platform-dependent rounding in the sim core (`ATARI_LONG_HACK` semantics matter). |
+| C-03 | **16-player cap.** The ring and player tables are capped at 16 (`PLAYER_MAX_COUNT`). |
+| C-04 | **No election storm; fixed membership.** Never emit `0x00` continuously — competing/repeated elections demote the sitting master so `COUNT-PLAYERS` never settles ("0 machines", the MIDI-ring boo-boo). The host triggers COUNT/SEND-DATA/START only once the lobby is settled; membership is frozen at game start and changes only between games (ORCHESTRATOR-CONTRACT; ties to C-01). |
