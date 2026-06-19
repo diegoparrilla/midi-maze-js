@@ -12,7 +12,7 @@ import {
   VIEW_SKY_HEIGHT,
   VIEW_WIDTH,
 } from './projection';
-import { makeWallList } from './renderlist';
+import { DRAW_WALL, makeDrawList } from './renderlist';
 
 const PAL = (paletteRaw as { ste: number; rgb: [number, number, number] }[]).map(
   ({ rgb }) => `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`,
@@ -105,25 +105,30 @@ function clearWindow(ctx: CanvasRenderingContext2D): void {
   ctx.fillRect(VIEW_SCREEN_X, VIEW_SCREEN_Y + VIEW_SKY_HEIGHT, VIEW_WIDTH, VIEW_FLOOR_HEIGHT + 1);
 }
 
-/** Render the first-person view from (y,x,dir) into the canvas. */
+/** Render the first-person view from (y,x,dir) into the canvas. `ownNumber` is the
+ *  viewer's player index (its sprite is not drawn). */
 export function drawView3D(
   ctx: CanvasRenderingContext2D,
   world: World,
   y: number,
   x: number,
   dir: number,
+  ownNumber = -1,
 ): void {
   // Black backdrop (the HUD areas are filled in EPIC-07).
   ctx.fillStyle = PAL[COLOR_BLACK]!;
   ctx.fillRect(0, 0, 320, 200);
   clearWindow(ctx);
 
-  const walls = makeWallList(world, y, x, dir);
+  const elems = makeDrawList(world, y, x, dir, ownNumber);
   // The list is front-to-back; draw it back-to-front for correct occlusion.
-  for (let i = walls.length - 1; i >= 0; i--) {
-    const w = walls[i]!;
-    drawWall(ctx, w.x1, w.h1, w.x2, w.h2, WALL_COLORS[w.color]!);
-    drawVline(ctx, w.x1, w.h1);
-    drawVline(ctx, w.x2, w.h2);
+  for (let i = elems.length - 1; i >= 0; i--) {
+    const el = elems[i]!;
+    if (el.t === DRAW_WALL) {
+      drawWall(ctx, el.b, el.c, el.d, el.e, WALL_COLORS[el.a]!);
+      drawVline(ctx, el.b, el.c);
+      drawVline(ctx, el.d, el.e);
+    }
+    // TODO(EPIC-07 STORY-02): DRAW_PLAYER / DRAW_SHOT via drawShape.
   }
 }
