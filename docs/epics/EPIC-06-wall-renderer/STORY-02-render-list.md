@@ -2,7 +2,7 @@
 id: STORY-02
 epic: EPIC-06
 title: Render-list generation (viewmatrix + visible walls)
-status: todo
+status: done
 ---
 
 ## Goal
@@ -13,11 +13,11 @@ objecttable coverage cull.
 
 ## Tasks
 
-- [ ] `make_draw_list` + `dir_table` + `draw_maze_calc_viewmatrix` (`makedraw.c`, `drawwall.c`)
-- [ ] `draw_maze_generate_renderlist` grid march (`makelist.c`)
-- [ ] `draw_mazes_set_wall` + `draw_mazes_clip_wall` + objecttable coverage (`drawwall.c`)
-- [ ] Golden vector: the wall draw-list (x1,h1,x2,h2,color) for sample positions/dirs
-- [ ] Test asserting the TS draw-list matches the C harness
+- [x] `makeWallList` + `DIR_TABLE` + `calcViewmatrix` (`src/render/renderlist.ts`)
+- [x] `generateRenderlist` grid march (`makelist.c`)
+- [x] `setWall` + `clipWall` (FOV line intersections) + objecttable coverage cull
+- [x] Golden vector: the wall draw-list (color,x1,h1,x2,h2) for 6 viewpoints (harness)
+- [x] Test asserting the TS draw-list matches the C harness (`renderlist.test.ts`)
 
 ## Acceptance
 
