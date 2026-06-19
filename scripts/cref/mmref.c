@@ -68,6 +68,19 @@ void rotate2d(int *px, int *py, int angle) {
   *px = retX;
 }
 
+/* draw3d.c: perspective projection. Colour-mode viewport constants. */
+#define VIEW_HCENTER 80
+#define VIEW_HALFWIDTH 80
+#define VIEW_CELL_PIXELS 20
+void calc_yx_to_xh(int *pinY_outX, int *pinX_outH) {
+  int newX = muls_divs(*pinX_outH, VIEW_HALFWIDTH, *pinY_outX);
+  int newH = VIEW_CELL_PIXELS;
+  newH *= MAZE_CELL_SIZE;
+  newH = newH / *pinY_outX;
+  *pinY_outX = -newX + VIEW_HCENTER;
+  *pinX_outH = -newH;
+}
+
 typedef struct {
   int deltaY, deltaX;
 } XY_SPEED_TABLE;
@@ -648,6 +661,16 @@ int main(void) {
     rotate2d(&x, &y, rang[i]);
     printf("%s{\"x\":%d,\"y\":%d,\"angle\":%d,\"rx\":%d,\"ry\":%d}", i ? "," : "", rx[i], ry[i],
            rang[i], x, y);
+  }
+  printf("],\n");
+
+  int projY[] = {-256, -256, -256, -512, -1024, -128, -2048, -200, -50};
+  int projX[] = {0, 128, -128, 256, -512, 64, 1024, 50, 10};
+  printf("  \"projection\": [");
+  for (int i = 0; i < 9; i++) {
+    int yy = projY[i], xx = projX[i];
+    calc_yx_to_xh(&yy, &xx);
+    printf("%s{\"y\":%d,\"x\":%d,\"sx\":%d,\"h\":%d}", i ? "," : "", projY[i], projX[i], yy, xx);
   }
   printf("],\n");
 
