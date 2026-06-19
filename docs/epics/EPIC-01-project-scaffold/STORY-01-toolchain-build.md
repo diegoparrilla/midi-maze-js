@@ -2,7 +2,7 @@
 id: STORY-01
 epic: EPIC-01
 title: Toolchain & build (Vite + TS + static output)
-status: todo
+status: done
 ---
 
 ## Goal
@@ -11,11 +11,11 @@ A working Vite + TypeScript project with dev server and a production static buil
 
 ## Tasks
 
-- [ ] `npm init` + add Vite, TypeScript; `tsconfig.json` with strict mode
-- [ ] `index.html` + `src/main.ts` rendering a placeholder 320×200 canvas
-- [ ] `npm run dev` (dev server) and `npm run build` (static `dist/`) scripts
-- [ ] `npm run preview` to serve the built bundle
-- [ ] `.gitignore` for `node_modules/` and `dist/` (repo already ignores `dist/`)
+- [x] `npm init` + add Vite, TypeScript; `tsconfig.json` with strict mode
+- [x] `index.html` + `src/main.ts` rendering a placeholder 320×200 canvas
+- [x] `npm run dev` (dev server) and `npm run build` (static `dist/`) scripts
+- [x] `npm run preview` to serve the built bundle
+- [x] `.gitignore` for `node_modules/` and `dist/` (repo already ignores `dist/`)
 
 ## Acceptance
 

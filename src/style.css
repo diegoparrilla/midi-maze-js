@@ -1,0 +1,24 @@
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+/* The 320x200 framebuffer is integer-upscaled in JS (D-04); keep the pixels crisp. */
+#screen {
+  image-rendering: pixelated;
+  display: block;
+}

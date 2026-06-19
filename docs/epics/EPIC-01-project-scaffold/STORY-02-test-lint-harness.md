@@ -2,7 +2,7 @@
 id: STORY-02
 epic: EPIC-01
 title: Test & lint harness (Vitest + linter)
-status: todo
+status: done
 ---
 
 ## Goal
@@ -11,10 +11,10 @@ Automated test and lint commands wired up so every later story can add specs.
 
 ## Tasks
 
-- [ ] Add Vitest; `npm test` runs the suite; `npm run test:watch` for the loop
-- [ ] One trivial passing spec proving the runner works
-- [ ] Add linter + formatter config; `npm run lint`
-- [ ] Document the loop in the root `README.md` (build/dev/test/lint)
+- [x] Add Vitest; `npm test` runs the suite; `npm run test:watch` for the loop
+- [x] One trivial passing spec proving the runner works (`src/upscale.test.ts`)
+- [x] Add linter + formatter config; `npm run lint` (ESLint + Prettier)
+- [x] Document the loop in the root `README.md` (build/dev/test/lint)
 
 ## Acceptance
 

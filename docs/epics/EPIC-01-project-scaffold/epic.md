@@ -2,7 +2,7 @@
 id: EPIC-01
 iteration: 1
 title: Project scaffold & tooling
-status: todo
+status: done
 ---
 
 ## Goal

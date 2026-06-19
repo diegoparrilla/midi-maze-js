@@ -1,0 +1,4 @@
+dist/
+node_modules/
+# Planning docs and generated dashboard are hand-/tool-managed Markdown.
+**/*.md

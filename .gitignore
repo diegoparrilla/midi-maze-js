@@ -62,3 +62,8 @@ dist/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Node
+node_modules/
+*.tsbuildinfo
+npm-debug.log*
