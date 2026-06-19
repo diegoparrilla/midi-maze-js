@@ -2,3 +2,6 @@ dist/
 node_modules/
 # Planning docs and generated dashboard are hand-/tool-managed Markdown.
 **/*.md
+# Generated assets (npm run assets) and vendored originals are not hand-formatted.
+src/assets/generated/
+assets-src/
