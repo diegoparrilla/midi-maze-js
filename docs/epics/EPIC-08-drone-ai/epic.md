@@ -14,11 +14,12 @@ Target / standard / ninja drones reproducing drone.c, driving player_joy_table[]
 - STORY-01: Drone model + `calc_drone_angle_table` + `drone_setup` (target
   assignment, teams). Golden-tested.
 - STORY-02: TARGET + STANDARD drones — `drone_action` for those types, `drone_move`,
-  `drone_generate_joystickdata`. Golden joystick traces.
+  `drone_generate_joystickdata`, `drone_sub_standard`, aiming + visibility helpers.
+  Golden joystick traces.
 - STORY-03: NINJA drone — pathfinding (`drone_sub_ninja` + plan/visibility helpers).
   Golden joystick traces. (This is the bulk of `drone.c`.)
-- STORY-04: Integrate into `step()` (drones move before players each tick); multi-tick
-  golden trace; wire drones into the solo demo.
+- STORY-04: Integrate into `step()` (drones generate joysticks before the hit-flag
+  reset, like maingame.c); multi-tick golden trace; wire drones into the solo demo.
 
 ## Notes
 

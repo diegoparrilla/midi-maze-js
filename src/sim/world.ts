@@ -11,9 +11,13 @@ export const PLAYER_MAX_LIVES = 3;
 export const GAME_WIN_SCORE = 10;
 
 export const PLAYER_DIR_NORTH = 0x00;
+export const PLAYER_DIR_NORTHEAST = 0x20;
 export const PLAYER_DIR_EAST = 0x40;
+export const PLAYER_DIR_SOUTHEAST = 0x60;
 export const PLAYER_DIR_SOUTH = 0x80;
+export const PLAYER_DIR_SOUTHWEST = 0xa0;
 export const PLAYER_DIR_WEST = 0xc0;
+export const PLAYER_DIR_NORTHWEST = 0xe0;
 
 interface ObjectSlot {
   y: number;
@@ -28,6 +32,8 @@ export class World {
   readonly players: Player[];
   readonly rng: Rng;
   playerAndDroneCount = 0;
+  /** Number of human/network players; drones occupy slots [machinesOnline, count). */
+  machinesOnline = 0;
   weDontHaveAWinner = 0;
   /** Rotating start index for the move loop (maingame.c), so player 0 isn't always first. */
   playerIndex = 0;
@@ -42,6 +48,8 @@ export class World {
   friendlyFire = 0;
   teamFlag = 0;
   readonly teamScores = [0, 0, 0, 0];
+  /** Number of drones of each type [target, standard, ninja] (maingame.c). */
+  readonly activeDronesByType = [0, 0, 0];
 
   constructor(maze: Maze, rng: Rng) {
     this.grid = Int8Array.from(maze.data);
