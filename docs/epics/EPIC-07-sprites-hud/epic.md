@@ -2,7 +2,7 @@
 id: EPIC-07
 iteration: 2
 title: Sprites, shadows & HUD
-status: in-progress
+status: done
 ---
 
 ## Goal

@@ -2,7 +2,7 @@
 id: STORY-03
 epic: EPIC-07
 title: HUD — crosshair, happy indicator, scoreboard
-status: in-progress
+status: done
 ---
 
 ## Goal
@@ -13,9 +13,11 @@ The on-screen UI around the maze view: the firing crosshair, the happy indicator
 ## Tasks
 
 - [x] Crosshair when alive + reloaded (`maingame.c`) — `src/render/hud.ts`
-- [ ] Happy indicator / health face (`happyind.c`) — inline face bitmaps + ball shape 12
-- [ ] Score noteboard (`notebrd.c`) — staff + note heads (needs `mapsmily` from moreshap.c)
-- [ ] Confirm the HUD renders (headless screenshot)
+- [x] Happy indicator / health face (`happyind.c`) — inline face bitmaps over ball shape 12,
+      tongue when dead; lives→face uses the comment-aligned mapping
+- [x] Score noteboard (`notebrd.c`) — faithful staff positions + ledger lines; note head is a
+      drawn dot in the player colour (the tiny `mapsmily` bitmap is not extracted)
+- [x] Confirmed the HUD renders (headless screenshot: happy face + score notes + crosshair)
 
 ## Acceptance
 
