@@ -12,7 +12,8 @@ import {
   VIEW_SKY_HEIGHT,
   VIEW_WIDTH,
 } from './projection';
-import { DRAW_WALL, makeDrawList } from './renderlist';
+import { DRAW_PLAYER, DRAW_SHOT, DRAW_WALL, makeDrawList } from './renderlist';
+import { BODY_SHAPE_BACK_VIEW, drawShape } from './shapes';
 
 const PAL = (paletteRaw as { ste: number; rgb: [number, number, number] }[]).map(
   ({ rgb }) => `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`,
@@ -128,7 +129,11 @@ export function drawView3D(
       drawWall(ctx, el.b, el.c, el.d, el.e, WALL_COLORS[el.a]!);
       drawVline(ctx, el.b, el.c);
       drawVline(ctx, el.d, el.e);
+    } else if (el.t === DRAW_PLAYER) {
+      drawShape(ctx, el.b, el.d, el.a, el.c, el.e);
+    } else if (el.t === DRAW_SHOT) {
+      // A shot is the body from behind — no face.
+      drawShape(ctx, el.b, el.d, BODY_SHAPE_BACK_VIEW, el.c, el.e);
     }
-    // TODO(EPIC-07 STORY-02): DRAW_PLAYER / DRAW_SHOT via drawShape.
   }
 }

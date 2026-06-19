@@ -2,7 +2,7 @@
 id: STORY-02
 epic: EPIC-07
 title: Sprite rasterization (body + face + shadow)
-status: todo
+status: done
 ---
 
 ## Goal
@@ -12,12 +12,12 @@ scaled by size and coloured per player — so opponents are visible.
 
 ## Tasks
 
-- [ ] `init_faces_shapes` equivalent: per-size body/face offsets + the derived shadow
-      image, from the extracted ball/face shapes
-- [ ] `draw_shape` (body in back colour, face in frame colour, shadow in dk-green)
+- [x] `init_faces_shapes` equivalent: shadow image derived from each ball shape;
+      geometry from the extracted ball/face shapes (`src/render/shapes.ts`)
+- [x] `draw_shape` (body in back colour, face in frame colour, shadow in dk-green)
       blitting 1bpp masks in a solid colour into the view window
-- [ ] Per-player colour tables (`color_cnv_back`/`color_cnv_frame`)
-- [ ] Confirm opponents render (headless screenshot)
+- [x] Per-player colour tables (`color_ply_back`/`color_ply_frame`)
+- [x] Confirmed opponents render (headless screenshot: yellow eyeball + face + shadow)
 
 ## Acceptance
 
