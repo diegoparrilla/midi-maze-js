@@ -2,7 +2,7 @@
 id: STORY-05
 epic: EPIC-04
 title: Per-tick step() + full golden trace integration
-status: todo
+status: done
 ---
 
 ## Goal
@@ -13,9 +13,11 @@ against an end-to-end C trace.
 
 ## Tasks
 
-- [ ] `step(joyTable)`: apply moves for every player/drone slot in order
-- [ ] Multi-player, multi-tick golden trace (several players, shots, a kill) vs C
-- [ ] Document the determinism contract for the network layer (EPIC-14)
+- [x] `step(joyTable)` (`src/sim/step.ts`): rebuild object map, reset hit flags,
+      move every slot from the rotating `playerIndex` with the winner early-break
+- [x] Multi-player, multi-tick golden trace (3 players, 16 ticks, fire+moves) vs the
+      C `maingame` tick runner — `src/sim/step.test.ts`
+- [x] Determinism contract for the network layer documented (`docs/reference/golden-master.md`)
 
 ## Acceptance
 

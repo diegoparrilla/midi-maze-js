@@ -29,6 +29,8 @@ export class World {
   readonly rng: Rng;
   playerAndDroneCount = 0;
   weDontHaveAWinner = 0;
+  /** Rotating start index for the move loop (maingame.c), so player 0 isn't always first. */
+  playerIndex = 0;
   objektAnz = 0;
   readonly objectTable: ObjectSlot[];
 

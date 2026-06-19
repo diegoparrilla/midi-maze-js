@@ -2,7 +2,7 @@
 id: EPIC-04
 iteration: 2
 title: Deterministic simulation core
-status: in-progress
+status: done
 ---
 
 ## Goal

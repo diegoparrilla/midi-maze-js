@@ -566,6 +566,39 @@ static void run_combat(const char *name, int seed, int count, PLY p0, PLY p1, co
   printf("]}");
 }
 
+/* Full game tick (maingame.c loop body): rebuild object map, reset hit flags,
+ * move every player from a rotating start index with the winner early-break. */
+static void run_match(const char *name, int seed, int count, const int *joy, int ticks) {
+  reset_world();
+  _random_seed = seed;
+  init_all_player(count, 0);
+  int playerIndex = 0;
+  printf("{\"name\":\"%s\",\"seed\":%d,\"count\":%d,\"ticks\":%d,", name, seed, count, ticks);
+  printf("\"config\":{\"reload\":%d,\"regen\":%d,\"revive\":%d,\"reviveLives\":%d,\"friendly\":%d,\"team\":%d},",
+         reload_time, regen_time, revive_time, revive_lives, friendly_fire, team_flag);
+  printf("\"joy\":[");
+  for (int i = 0; i < count * ticks; i++) printf("%s%d", i ? "," : "", joy[i]);
+  printf("],\"trace\":[");
+  for (int t = 0; t < ticks; t++) {
+    set_all_player();
+    for (int i = 0; i < count; i++) player_data[i].ply_hitflag = 0;
+    int i = playerIndex;
+    do {
+      move_player(i, joy[t * count + i], 0);
+      if (!we_dont_have_a_winner) break;
+      if (--i < 0) i = count - 1;
+    } while (i != playerIndex);
+    if (++playerIndex == count) playerIndex = 0;
+    printf("%s[", t ? "," : "");
+    for (int i = 0; i < count; i++) {
+      printf("%s", i ? "," : "");
+      emit_full(&player_data[i]);
+    }
+    printf("]");
+  }
+  printf("]}");
+}
+
 int main(void) {
   for (int i = 0; i < 65; i++) sine_table[i] = (short)(sin((double)i / 256.0 * 2.0 * M_PI) * 256.0);
   calc_sin_table();
@@ -667,6 +700,18 @@ int main(void) {
   run_combat("shoot-hit", 0, 2, mk(128, 128, PLAYER_DIR_EAST, 3), mk(128, 1152, PLAYER_DIR_EAST, 3), joyFire, 16);
   printf(",");
   run_combat("kill-respawn", 777, 2, mk(128, 128, PLAYER_DIR_EAST, 3), mk(128, 1152, PLAYER_DIR_EAST, 1), joyFire, 24);
+  printf("],\n");
+
+  /* full-tick match: 3 players, placed by init_all_player, driven for 16 ticks */
+  const int MN = 16, MC = 3;
+  int matchJoy[16 * 3];
+  for (int t = 0; t < MN; t++) {
+    matchJoy[t * MC + 0] = (t == 0) ? (JOYSTICK_UP | JOYSTICK_BUTTON) : JOYSTICK_UP;
+    matchJoy[t * MC + 1] = (t < 3) ? JOYSTICK_RIGHT : JOYSTICK_UP;
+    matchJoy[t * MC + 2] = (t < 3) ? JOYSTICK_LEFT : JOYSTICK_UP;
+  }
+  printf("  \"match\": [");
+  run_match("three-players", 4242, MC, matchJoy, MN);
   printf("],\n");
 
   printf("  \"rng\": {\n    \"seed\": 12345,\n");
