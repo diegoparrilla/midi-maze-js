@@ -857,11 +857,80 @@ int draw_mazes_set_wall(int y1p, int x1p, int y2p, int x2p, int color, int leftR
   }
   return YES;
 }
-/* sprites are EPIC-07 */
-static void draw_mazes_set_object(int fieldY, int fieldX, int flip) {
-  (void)fieldY;
-  (void)fieldX;
-  (void)flip;
+/* maze_set.c: add player/shot sprites in a cell to the draw list */
+short screen_rez = 0; /* colour mode */
+short viewposition_direction, viewposition_y, viewposition_x;
+void draw_mazes_set_object(int cellFY, int cellFX, int flip) {
+  struct {
+    int distance, xOffset, player;
+  } objects[10];
+  int j, i, nextObject, objCount, player, spriteID, x, y, size, xOffset, distance;
+  objCount = 0;
+  for (player = get_maze_data(cellFY, cellFX, flip); player != MAZE_FIELD_EMPTY; player = nextObject) {
+    if (player < PLAYER_MAX_COUNT) {
+      y = player_data[player].ply_y;
+      x = player_data[player].ply_x;
+      nextObject = player_data[player].ply_plist;
+    } else {
+      nextObject = player - PLAYER_MAX_COUNT;
+      y = player_data[nextObject].ply_shooty;
+      x = player_data[nextObject].ply_shootx;
+      nextObject = player_data[nextObject].ply_slist;
+    }
+    distance = y - viewposition_y;
+    xOffset = x - viewposition_x;
+    rotate2d(&distance, &xOffset, viewposition_direction);
+    objects[objCount].distance = distance;
+    objects[objCount].xOffset = xOffset;
+    objects[objCount].player = player;
+    if (++objCount >= (int)(sizeof(objects) / sizeof(objects[0]))) break;
+  }
+  for (i = objCount - 1; i > 0; i--)
+    for (j = 0; j < i; j++) {
+      if (objects[j].distance <= objects[j + 1].distance) continue;
+      nextObject = objects[j].distance; objects[j].distance = objects[j + 1].distance; objects[j + 1].distance = nextObject;
+      nextObject = objects[j].xOffset; objects[j].xOffset = objects[j + 1].xOffset; objects[j + 1].xOffset = nextObject;
+      nextObject = objects[j].player; objects[j].player = objects[j + 1].player; objects[j + 1].player = nextObject;
+    }
+  while (objCount > 0) {
+    objCount--;
+    player = objects[objCount].player;
+    distance = objects[objCount].distance;
+    xOffset = objects[objCount].xOffset;
+    if (player < PLAYER_MAX_COUNT) {
+      if (player != own_number && distance < 0) {
+        if ((size = -4000 / distance) < 1) size = 1;
+        if (size > 32) size = 32;
+        if (screen_rez) size <<= 1;
+        y = viewscreen_hcenter - muls_divs(xOffset, viewscreen_halfwidth, distance);
+        if (!objecttable_check_if_hidden(y - size, y + size - 1)) {
+          static const short face_shape_tab[32] = {0,  19, 18, 17, 16, 15, 14, 13, 12, 11, 10,
+                                                   10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+                                                   9,  8,  7,  6,  5,  4,  3,  2,  1,  0};
+          spriteID = (player_data[player].ply_dir - 128 - viewposition_direction) + (xOffset * 32) / distance;
+          spriteID = face_shape_tab[(spriteID >> 3) & 0x1f];
+          x = viewscreen_sky_height + 1 - (viewscreen_cell_pixels * MAZE_CELL_SIZE) / distance;
+          to_draw_list(DRAW_TYPE_PLAYER, spriteID, y - size, x, size,
+                       player_data[player].ply_hitflag ? player_data[player].ply_gunman : player);
+        }
+      }
+    } else {
+      player -= PLAYER_MAX_COUNT;
+      distance = player_data[player].ply_shooty - viewposition_y;
+      xOffset = player_data[player].ply_shootx - viewposition_x;
+      rotate2d(&distance, &xOffset, viewposition_direction);
+      if (distance < 0 && ((xOffset >= 0 && -distance >= xOffset) || (xOffset < 0 && distance <= xOffset))) {
+        if ((size = -1000 / distance) == 0) size = 1;
+        if (size > 32) size = 32;
+        if (screen_rez) size <<= 1;
+        y = viewscreen_hcenter - muls_divs(xOffset, viewscreen_halfwidth, distance);
+        x = viewscreen_sky_height + 1 - (viewscreen_cell_pixels * MAZE_CELL_SIZE) / distance;
+        if (!objecttable_check_if_hidden(y - size, y + size - 1)) {
+          to_draw_list(DRAW_TYPE_SHOT, 0, y - size, x, size, player);
+        }
+      }
+    }
+  }
 }
 
 static struct {
@@ -870,7 +939,6 @@ static struct {
     {-7, -7, 1, 9, -1, 1, 0},  {8, 8, -8, 0, 1, -1, 1}, {-7, 8, 9, 0, 1, 1, 1},  {8, -7, 0, 9, 1, 1, 0},
     {8, 8, 0, -8, 1, -1, 0},   {-7, -7, 9, 1, -1, 1, 1}, {8, -7, -8, 1, -1, -1, 1}, {-7, 8, 1, -8, -1, -1, 0},
 };
-short viewposition_direction, viewposition_y, viewposition_x;
 void init_dirtable(void) {
   for (int i = 0; i < 8; i++) {
     dir_table[i].minY *= MAZE_CELL_SIZE;
@@ -956,19 +1024,23 @@ void make_draw_list(int y, int x, int dir) {
   draw_maze_generate_renderlist(y, x, dir_table[compassDir].fieldOffsetY, dir_table[compassDir].fieldOffsetX,
                                 dir_table[compassDir].flipped, compassDir & 1);
 }
-static void run_view(const char *name, int y, int x, int dir) {
+static void run_view(const char *name, int y, int x, int dir, int ownNum, int count, const PLY *players) {
   reset_world();
-  playerAndDroneCount = 0;
+  own_number = ownNum;
+  playerAndDroneCount = count;
+  for (int i = 0; i < count; i++) player_data[i] = players[i];
   make_draw_list(y, x, dir);
-  printf("{\"name\":\"%s\",\"y\":%d,\"x\":%d,\"dir\":%d,\"walls\":[", name, y, x, dir);
-  int first = 1;
-  for (int i = 0; i < draw_elem_count; i++) {
-    if (draw_elem_list[i].type != DRAW_TYPE_WALL) continue;
-    printf("%s{\"color\":%d,\"x1\":%d,\"h1\":%d,\"x2\":%d,\"h2\":%d}", first ? "" : ",",
-           draw_elem_list[i].sprite_wallcolor, draw_elem_list[i].x, draw_elem_list[i].h_shadowOffset,
-           draw_elem_list[i].x2_size, draw_elem_list[i].h2_color);
-    first = 0;
-  }
+  own_number = -1;
+  printf("{\"name\":\"%s\",\"y\":%d,\"x\":%d,\"dir\":%d,\"own\":%d,\"count\":%d,\"players\":[", name, y, x,
+         dir, ownNum, count);
+  for (int i = 0; i < count; i++)
+    printf("%s{\"y\":%d,\"x\":%d,\"dir\":%d,\"lives\":%d}", i ? "," : "", players[i].ply_y,
+           players[i].ply_x, players[i].ply_dir, players[i].ply_lives);
+  printf("],\"elems\":[");
+  for (int i = 0; i < draw_elem_count; i++)
+    printf("%s{\"t\":%d,\"a\":%d,\"b\":%d,\"c\":%d,\"d\":%d,\"e\":%d}", i ? "," : "",
+           draw_elem_list[i].type, draw_elem_list[i].sprite_wallcolor, draw_elem_list[i].x,
+           draw_elem_list[i].h_shadowOffset, draw_elem_list[i].x2_size, draw_elem_list[i].h2_color);
   printf("]}");
 }
 
@@ -1098,19 +1170,29 @@ int main(void) {
   run_match("three-players", 4242, MC, matchJoy, MN);
   printf("],\n");
 
-  /* render-list (wall draw-list) for sample viewpoints on the shared maze */
+  /* render-list for sample viewpoints (walls only) + sprite scenes on the shared maze */
+  PLY sv[3];
   printf("  \"renderlist\": [");
-  run_view("north@1,7", 128, 896, PLAYER_DIR_NORTH);
+  run_view("north@1,7", 128, 896, PLAYER_DIR_NORTH, -1, 0, NULL);
   printf(",");
-  run_view("north@7,7", 896, 896, PLAYER_DIR_NORTH);
+  run_view("north@7,7", 896, 896, PLAYER_DIR_NORTH, -1, 0, NULL);
   printf(",");
-  run_view("east@1,7", 128, 896, PLAYER_DIR_EAST);
+  run_view("east@1,7", 128, 896, PLAYER_DIR_EAST, -1, 0, NULL);
   printf(",");
-  run_view("south@7,7", 896, 896, PLAYER_DIR_SOUTH);
+  run_view("south@7,7", 896, 896, PLAYER_DIR_SOUTH, -1, 0, NULL);
   printf(",");
-  run_view("ne@7,7", 896, 896, PLAYER_DIR_NORTHEAST);
+  run_view("ne@7,7", 896, 896, PLAYER_DIR_NORTHEAST, -1, 0, NULL);
   printf(",");
-  run_view("sw@5,5", 640, 640, PLAYER_DIR_SOUTHWEST);
+  run_view("sw@5,5", 640, 640, PLAYER_DIR_SOUTHWEST, -1, 0, NULL);
+  printf(",");
+  sv[0] = mk(128, 896, PLAYER_DIR_EAST, 3);
+  sv[1] = mk(128, 1408, PLAYER_DIR_WEST, 3);
+  run_view("sprite-ahead", 128, 896, PLAYER_DIR_EAST, 0, 2, sv);
+  printf(",");
+  sv[0] = mk(128, 384, PLAYER_DIR_EAST, 3);
+  sv[1] = mk(128, 896, PLAYER_DIR_NORTH, 3);
+  sv[2] = mk(128, 1408, PLAYER_DIR_WEST, 3);
+  run_view("sprite-three", 128, 384, PLAYER_DIR_EAST, 0, 3, sv);
   printf("],\n");
 
   printf("  \"rng\": {\n    \"seed\": 12345,\n");

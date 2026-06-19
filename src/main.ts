@@ -1,5 +1,7 @@
 import './style.css';
+import dashboardUrl from './assets/generated/main-screen.png';
 import midimazeRaw from './assets/generated/mazes/midimaze.json';
+import { drawCrosshair, drawHappyIndicator, drawScoreboard } from './render/hud';
 import { drawMap2D } from './render/map2d';
 import { drawView3D } from './render/view3d';
 import {
@@ -24,17 +26,34 @@ const status = document.querySelector<HTMLElement>('#status');
 const mazeJson = midimazeRaw as { size: number; data: number[] };
 const maze = { size: mazeJson.size, data: Int8Array.from(mazeJson.data), defect: false };
 
+// Solo demo: a camera (player 0) plus two stationary opponents in the open row-1
+// corridor, so the eyeball sprites are visible until drones/networking arrive.
+const PLAYER_COUNT = 3;
 const world = new World(maze, new Rng(7));
 world.reloadTime = 10;
 world.regenTime = 100;
 world.reviveTime = 50;
 world.reviveLives = 2;
-initAllPlayer(world, 1); // solo camera
-// Start looking down an open corridor (field 1,1 facing east) for a clear first view.
-const cam = world.players[0]!;
-cam.ply_y = 128;
-cam.ply_x = 128;
-cam.ply_dir = 64;
+initAllPlayer(world, PLAYER_COUNT);
+const starts = [
+  { y: 128, x: 128, dir: 64 }, // camera, facing east
+  { y: 128, x: 640, dir: 192 }, // opponent at field (1,5), facing the camera
+  { y: 128, x: 1152, dir: 192 }, // opponent at field (1,9)
+];
+starts.forEach((s, i) => {
+  const p = world.players[i]!;
+  p.ply_y = s.y;
+  p.ply_x = s.x;
+  p.ply_dir = s.dir;
+});
+
+// Synth-dashboard background (the maze view + HUD are drawn into its panels).
+const dashboard = new Image();
+let dashboardReady = false;
+dashboard.onload = () => {
+  dashboardReady = true;
+};
+dashboard.src = dashboardUrl;
 
 let mapMode = false;
 const keys = new Set<string>();
@@ -63,10 +82,22 @@ function fit(c: HTMLCanvasElement): void {
 }
 
 function frame(): void {
-  step(world, [joyByte()]);
+  const joyTable = [joyByte(), 0, 0]; // only player 0 (the camera) is controlled
+  step(world, joyTable);
   const p = world.players[0]!;
-  if (mapMode) drawMap2D(ctx!, world);
-  else drawView3D(ctx!, world, p.ply_y, p.ply_x, p.ply_dir);
+  if (mapMode) {
+    drawMap2D(ctx!, world);
+  } else {
+    if (dashboardReady) ctx!.drawImage(dashboard, 0, 0);
+    else {
+      ctx!.fillStyle = '#000';
+      ctx!.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+    }
+    drawView3D(ctx!, world, p.ply_y, p.ply_x, p.ply_dir, 0);
+    if (p.ply_reload === 0 && p.ply_lives > 0) drawCrosshair(ctx!, 0);
+    drawHappyIndicator(ctx!, world, 0);
+    drawScoreboard(ctx!, world);
+  }
   if (status) {
     status.textContent = `first-person · field (${p.ply_x >> 7},${p.ply_y >> 7}) dir ${p.ply_dir} · arrows move/turn, space fire, M = map`;
   }

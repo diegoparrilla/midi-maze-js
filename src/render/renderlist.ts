@@ -1,21 +1,37 @@
-// Render-list generation (makedraw.c, makelist.c, drawwall.c): from a viewpoint,
-// produce the ordered list of visible wall trapezoids (front-to-back), with FOV
-// clipping and the objecttable coverage cull. Faithful to the original integer
-// math. Sprites (draw_mazes_set_object) are EPIC-07; rasterization is STORY-03.
-import { MAZE_FIELD_WALL } from '../maze';
+// Render-list generation (makedraw.c, makelist.c, drawwall.c, maze_set.c): from a
+// viewpoint, produce the ordered draw list (front-to-back) of wall trapezoids and
+// player/shot sprites, with FOV clipping and the objecttable coverage cull.
+// Faithful to the original integer math. Rasterization is view3d.ts.
+import { MAZE_FIELD_EMPTY, MAZE_FIELD_WALL } from '../maze';
+import { mulsDivs } from '../sim/fixed';
 import { MAZE_CELL_SIZE } from '../sim/speed-table';
 import { rotate2d } from '../sim/trig';
-import { MAZE_FIELD_SHIFT, type World } from '../sim/world';
-import { VIEW_HALFWIDTH, VIEW_HCENTER, calcYxToXh } from './projection';
+import { MAZE_FIELD_SHIFT, PLAYER_MAX_COUNT, type World } from '../sim/world';
+import {
+  VIEW_CELL_PIXELS,
+  VIEW_HALFWIDTH,
+  VIEW_HCENTER,
+  VIEW_SKY_HEIGHT,
+  calcYxToXh,
+} from './projection';
 
-/** A wall draw-list entry: a trapezoid between screen columns x1..x2 with half-
- *  heights h1/h2, flat-shaded with wall colour 0 or 1. */
-export interface Wall {
-  color: number;
-  x1: number;
-  h1: number;
-  x2: number;
-  h2: number;
+export const DRAW_WALL = 1;
+export const DRAW_PLAYER = 2;
+export const DRAW_SHOT = 3;
+
+/**
+ * A draw-list element (matches the C `draw_elem` struct). Field meaning by type:
+ * - WALL:   a=colour, b=x1, c=h1, d=x2, e=h2
+ * - PLAYER: a=face sprite, b=screenX-size, c=shadowOffset, d=size, e=colour(player)
+ * - SHOT:   a=0,           b=screenX-size, c=shadowOffset, d=size, e=player
+ */
+export interface DrawElem {
+  t: number;
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+  e: number;
 }
 
 interface Delta {
@@ -34,13 +50,23 @@ const DIR_TABLE = [
   { minY: -7, minX: 8, maxY: 1, maxX: -8, fieldOffsetY: -1, fieldOffsetX: -1, flipped: 0 }, // NW
 ] as const;
 
+// 32 viewing octants -> one of 20 face images (maze_set.c).
+const FACE_SHAPE_TAB = [
+  0, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 9, 8, 7, 6,
+  5, 4, 3, 2, 1, 0,
+];
+
 const VIEW_FULL_WIDTH = VIEW_HCENTER + VIEW_HALFWIDTH; // 160
 
 class RenderList {
   private vm: Delta[][];
   private table: { xleft: number; xright: number }[];
   private tableSize = 0;
-  private elems: Wall[] = [];
+  private elems: DrawElem[] = [];
+  private viewY = 0;
+  private viewX = 0;
+  private viewDir = 0;
+  private ownNumber = -1;
 
   constructor(private readonly world: World) {
     this.vm = Array.from({ length: 9 }, () =>
@@ -49,7 +75,11 @@ class RenderList {
     this.table = Array.from({ length: 20 }, () => ({ xleft: 0, xright: 0 }));
   }
 
-  build(y: number, x: number, dir: number): Wall[] {
+  build(y: number, x: number, dir: number, ownNumber: number): DrawElem[] {
+    this.viewY = y;
+    this.viewX = x;
+    this.viewDir = dir;
+    this.ownNumber = ownNumber;
     const cd = (dir >> 5) & 7;
     const d = DIR_TABLE[cd]!;
     this.calcViewmatrix(
@@ -297,7 +327,7 @@ class RenderList {
     }
     if (!this.objCheckHidden(xleft, xright)) {
       this.objAdd(xleft, xright);
-      this.elems.push({ color, x1, h1, x2, h2 });
+      this.elems.push({ t: DRAW_WALL, a: color, b: x1, c: h1, d: x2, e: h2 });
     }
     return false;
   }
@@ -324,6 +354,95 @@ class RenderList {
     return true;
   }
 
+  /** draw_mazes_set_object: add the player/shot sprites in a cell to the draw list. */
+  private setObject(cellFY: number, cellFX: number, flip: number): void {
+    const pd = this.world.players;
+    const objects: { distance: number; xOffset: number; player: number }[] = [];
+    let p = this.world.getMazeData(cellFY, cellFX, !!flip);
+    while (p !== MAZE_FIELD_EMPTY) {
+      let y: number;
+      let x: number;
+      let next: number;
+      if (p < PLAYER_MAX_COUNT) {
+        y = pd[p]!.ply_y;
+        x = pd[p]!.ply_x;
+        next = pd[p]!.ply_plist;
+      } else {
+        const sp = p - PLAYER_MAX_COUNT;
+        y = pd[sp]!.ply_shooty;
+        x = pd[sp]!.ply_shootx;
+        next = pd[sp]!.ply_slist;
+      }
+      const [distance, xOffset] = rotate2d(y - this.viewY, x - this.viewX, this.viewDir);
+      objects.push({ distance, xOffset, player: p });
+      if (objects.length >= 10) break;
+      p = next;
+    }
+
+    // sort ascending by distance (bubble, faithful)
+    for (let i = objects.length - 1; i > 0; i--) {
+      for (let j = 0; j < i; j++) {
+        if (objects[j]!.distance > objects[j + 1]!.distance) {
+          const t = objects[j]!;
+          objects[j] = objects[j + 1]!;
+          objects[j + 1] = t;
+        }
+      }
+    }
+
+    // process nearest-first (front-to-back): the list is ascending, take from the end
+    for (let oi = objects.length - 1; oi >= 0; oi--) {
+      const player = objects[oi]!.player;
+      let distance = objects[oi]!.distance;
+      let xOffset = objects[oi]!.xOffset;
+      if (player < PLAYER_MAX_COUNT) {
+        if (player !== this.ownNumber && distance < 0) {
+          let size = Math.trunc(-4000 / distance);
+          if (size < 1) size = 1;
+          if (size > 32) size = 32;
+          const screenX = VIEW_HCENTER - mulsDivs(xOffset, VIEW_HALFWIDTH, distance);
+          if (!this.objCheckHidden(screenX - size, screenX + size - 1)) {
+            let spriteID =
+              pd[player]!.ply_dir - 128 - this.viewDir + Math.trunc((xOffset * 32) / distance);
+            spriteID = FACE_SHAPE_TAB[(spriteID >> 3) & 0x1f]!;
+            const shadow =
+              VIEW_SKY_HEIGHT + 1 - Math.trunc((VIEW_CELL_PIXELS * MAZE_CELL_SIZE) / distance);
+            const color = pd[player]!.ply_hitflag ? pd[player]!.ply_gunman : player;
+            this.elems.push({
+              t: DRAW_PLAYER,
+              a: spriteID,
+              b: screenX - size,
+              c: shadow,
+              d: size,
+              e: color,
+            });
+          }
+        }
+      } else {
+        const sp = player - PLAYER_MAX_COUNT;
+        [distance, xOffset] = rotate2d(
+          pd[sp]!.ply_shooty - this.viewY,
+          pd[sp]!.ply_shootx - this.viewX,
+          this.viewDir,
+        );
+        if (
+          distance < 0 &&
+          ((xOffset >= 0 && -distance >= xOffset) || (xOffset < 0 && distance <= xOffset))
+        ) {
+          let size = Math.trunc(-1000 / distance);
+          if (size === 0) size = 1;
+          if (size > 32) size = 32;
+          const screenX = VIEW_HCENTER - mulsDivs(xOffset, VIEW_HALFWIDTH, distance);
+          const shadow =
+            VIEW_SKY_HEIGHT + 1 - Math.trunc((VIEW_CELL_PIXELS * MAZE_CELL_SIZE) / distance);
+          if (!this.objCheckHidden(screenX - size, screenX + size - 1)) {
+            this.elems.push({ t: DRAW_SHOT, a: 0, b: screenX - size, c: shadow, d: size, e: sp });
+          }
+        }
+      }
+    }
+  }
+
   private generateRenderlist(
     y: number,
     x: number,
@@ -347,6 +466,7 @@ class RenderList {
       let viewingWidth = 7;
       let fieldFX = fieldX;
       do {
+        this.setObject(fieldFY, fieldFX, flip);
         fieldFX -= fieldOffsetX;
         if (wall(fieldFY, fieldFX)) {
           if (
@@ -385,6 +505,7 @@ class RenderList {
         if (this.objCheckCovered()) break;
         if (viewingWidth === 16) break;
         fieldFX += fieldOffsetX;
+        this.setObject(fieldFY, fieldFX, flip);
         fieldFX += fieldOffsetX;
         viewingWidth++;
       }
@@ -435,7 +556,14 @@ class RenderList {
   }
 }
 
-/** Build the wall draw-list for a viewpoint (y,x in units, dir 0..255). */
-export function makeWallList(world: World, y: number, x: number, dir: number): Wall[] {
-  return new RenderList(world).build(y, x, dir);
+/** Build the draw list for a viewpoint (y,x in units, dir 0..255). `ownNumber` is
+ *  the viewer's player index (its own sprite is not drawn); -1 draws everyone. */
+export function makeDrawList(
+  world: World,
+  y: number,
+  x: number,
+  dir: number,
+  ownNumber = -1,
+): DrawElem[] {
+  return new RenderList(world).build(y, x, dir, ownNumber);
 }
