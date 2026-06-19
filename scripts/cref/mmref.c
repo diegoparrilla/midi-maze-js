@@ -29,9 +29,13 @@
 #define PLAYER_WALL_DISTANCE 65
 #define GAME_WIN_SCORE 10
 #define PLAYER_DIR_NORTH 0x00
+#define PLAYER_DIR_NORTHEAST 0x20
 #define PLAYER_DIR_EAST 0x40
+#define PLAYER_DIR_SOUTHEAST 0x60
 #define PLAYER_DIR_SOUTH 0x80
+#define PLAYER_DIR_SOUTHWEST 0xa0
 #define PLAYER_DIR_WEST 0xc0
+#define PLAYER_DIR_NORTHWEST 0xe0
 #define JOYSTICK_UP 0x01
 #define JOYSTICK_DOWN 0x02
 #define JOYSTICK_LEFT 0x04
@@ -66,6 +70,19 @@ void rotate2d(int *px, int *py, int angle) {
   int retX = fast_cos(*px, angle) - fast_sin(*py, angle);
   *py = fast_sin(*px, angle) + fast_cos(*py, angle);
   *px = retX;
+}
+
+/* draw3d.c: perspective projection. Colour-mode viewport constants. */
+#define VIEW_HCENTER 80
+#define VIEW_HALFWIDTH 80
+#define VIEW_CELL_PIXELS 20
+void calc_yx_to_xh(int *pinY_outX, int *pinX_outH) {
+  int newX = muls_divs(*pinX_outH, VIEW_HALFWIDTH, *pinY_outX);
+  int newH = VIEW_CELL_PIXELS;
+  newH *= MAZE_CELL_SIZE;
+  newH = newH / *pinY_outX;
+  *pinY_outX = -newX + VIEW_HCENTER;
+  *pinX_outH = -newH;
 }
 
 typedef struct {
@@ -599,7 +616,364 @@ static void run_match(const char *name, int seed, int count, const int *joy, int
   printf("]}");
 }
 
+/* ===== renderer render-list (draw3d.c, drawwall.c, makelist.c, makedraw.c) =====
+ * Builds the wall draw-list for a viewpoint. Sprites (draw_mazes_set_object) are
+ * stubbed — they belong to EPIC-07. Rasterization (draw_wall/draw_list) is EPIC-06
+ * STORY-03. Viewport globals are colour-mode constants. */
+short viewscreen_hcenter = 80, viewscreen_halfwidth = 80;
+short viewscreen_sky_height = 50, viewscreen_floor_height = 50, viewscreen_cell_pixels = 20;
+
+#define DRAW_TYPE_WALL 1
+#define DRAW_TYPE_PLAYER 2
+#define DRAW_TYPE_SHOT 3
+
+static short draw_elem_count;
+static struct {
+  int type, sprite_wallcolor, x, h_shadowOffset, x2_size, h2_color;
+} draw_elem_list[100];
+void clear_draw_list(void) { draw_elem_count = 0; }
+void to_draw_list(int type, int sprite_wallcolor, int x, int h_shadowOffset, int x2_size, int h2_color) {
+  draw_elem_list[draw_elem_count].type = type;
+  draw_elem_list[draw_elem_count].sprite_wallcolor = sprite_wallcolor;
+  draw_elem_list[draw_elem_count].x = x;
+  draw_elem_list[draw_elem_count].h_shadowOffset = h_shadowOffset;
+  draw_elem_list[draw_elem_count].x2_size = x2_size;
+  draw_elem_list[draw_elem_count].h2_color = h2_color;
+  draw_elem_count++;
+}
+
+static short table_size;
+static struct {
+  short xleft, xright;
+} table_list[20];
+static int objecttable_search(int x1, int startIndex, int *pFoundFlag);
+static void objecttable_shift_table(int lowerIndex, int upperIndex);
+void objecttable_clear(void) { table_size = 0; }
+int objecttable_check_if_hidden(int xleft, int xright) {
+  int fullWidth = viewscreen_hcenter + viewscreen_halfwidth - 1, ret, i;
+  if (xright < 0) return TRUE;
+  if (xleft > fullWidth) return TRUE;
+  if (xleft < 0) xleft = 0;
+  if (xright > fullWidth) xright = fullWidth;
+  ret = FALSE;
+  for (i = 0; i < table_size; i++)
+    if (table_list[i].xleft <= xleft && table_list[i].xright >= xright) {
+      ret = TRUE;
+      break;
+    }
+  return ret;
+}
+int objecttable_check_view_fully_covered(void) {
+  return table_size == 1 && table_list[0].xleft == 0 &&
+         viewscreen_hcenter + viewscreen_halfwidth == table_list[0].xright;
+}
+void objecttable_add(int xleft, int xright) {
+  int newxright, newxleft, foundxrightFlag, foundxleftFlag, xrightIndex, xleftIndex;
+  xleftIndex = objecttable_search(xleft, 0, &foundxleftFlag);
+  xrightIndex = objecttable_search(xright, xleftIndex, &foundxrightFlag);
+  newxleft = foundxleftFlag ? table_list[xleftIndex].xleft : xleft;
+  if (foundxrightFlag) {
+    newxright = table_list[xrightIndex].xright;
+    objecttable_shift_table(xleftIndex, xrightIndex - 1);
+  } else {
+    newxright = xright;
+    objecttable_shift_table(xleftIndex + 1, xrightIndex - 1);
+  }
+  table_list[xleftIndex].xleft = newxleft;
+  table_list[xleftIndex].xright = newxright;
+}
+int objecttable_search(int x1, int startIndex, int *pFoundFlag) {
+  int i;
+  *pFoundFlag = FALSE;
+  for (i = startIndex; i < table_size; i++) {
+    if (table_list[i].xleft > x1) break;
+    if (table_list[i].xright >= x1) {
+      *pFoundFlag = TRUE;
+      break;
+    }
+  }
+  return i;
+}
+void objecttable_shift_table(int lowerIndex, int upperIndex) {
+  int width = upperIndex - lowerIndex + 1;
+  if (width > 0) {
+    upperIndex++;
+    while (upperIndex < table_size) {
+      table_list[lowerIndex].xleft = table_list[upperIndex].xleft;
+      table_list[lowerIndex++].xright = table_list[upperIndex++].xright;
+    }
+    table_size = lowerIndex;
+  } else {
+    if (width >= 0) return;
+    for (upperIndex = table_size; upperIndex >= lowerIndex; upperIndex--) {
+      table_list[upperIndex].xleft = table_list[upperIndex - 1].xleft;
+      table_list[upperIndex].xright = table_list[upperIndex - 1].xright;
+    }
+    table_size++;
+  }
+}
+int objecttable_set_wall(int x1, int h1, int x2, int h2, int color, int leftRightFlag) {
+  int xright, xleft;
+  if (x1 <= x2) {
+    xleft = x1;
+    xright = x2;
+  } else {
+    xleft = x2;
+    xright = x1;
+  }
+  if (leftRightFlag) {
+    if (objecttable_check_if_hidden(0, xright)) return YES;
+  } else {
+    if (objecttable_check_if_hidden(xleft, viewscreen_hcenter + viewscreen_halfwidth)) return YES;
+  }
+  if (!objecttable_check_if_hidden(xleft, xright)) {
+    objecttable_add(xleft, xright);
+    to_draw_list(DRAW_TYPE_WALL, color, x1, h1, x2, h2);
+  }
+  return NO;
+}
+
+static int draw_mazes_wall_intersection(int y1, int x1, int y2, int x2, int slope, int *py, int *px) {
+  register int divisor, diff, deltaY, deltaX;
+  deltaY = y1 - y2;
+  deltaX = x2 - x1;
+  divisor = y1 * deltaX + x1 * deltaY;
+  if (slope == 1) {
+    diff = deltaX;
+    if (diff += deltaY) {
+      *py = *px = divisor / diff;
+      return YES;
+    }
+  } else if (slope == -1) {
+    diff = deltaY;
+    if (diff -= deltaX) {
+      *py = -(*px = divisor / diff);
+      return YES;
+    }
+  } else {
+    if (deltaX) {
+      *py = divisor / deltaX;
+      return YES;
+    }
+  }
+  return NO;
+}
+static int draw_mazes_check_order(int y1, int x1, int y2, int x2, int y3, int x3) {
+  int xCoordOkFlag, yCoordOkFlag;
+  yCoordOkFlag = (y1 <= y3) ? (y1 <= y2 && y2 <= y3) : (y3 <= y2 && y2 <= y1);
+  xCoordOkFlag = (x1 <= x3) ? (x1 <= x2 && x2 <= x3) : (x3 <= x2 && x2 <= x1);
+  return yCoordOkFlag && xCoordOkFlag;
+}
+int draw_mazes_clip_wall(int *py1, int *px1, int *py2, int *px2) {
+  int tmp, x, y, xy2InViewFlag, xy1InViewFlag;
+  xy1InViewFlag = (*px1 >= 0) ? *py1 < -(*px1) : *py1 < *px1;
+  xy2InViewFlag = (*px2 >= 0) ? *py2 < -(*px2) : *py2 < *px2;
+  if (xy1InViewFlag && xy2InViewFlag) return YES;
+  if (!xy1InViewFlag && !xy2InViewFlag) {
+    if (*px1 * *px2 >= 0) return NO;
+    if (draw_mazes_wall_intersection(*py1, *px1, *py2, *px2, 0, &y, &x)) {
+      if (y >= 0) return NO;
+      if (*px1 > *px2) {
+        tmp = *py1; *py1 = *py2; *py2 = tmp;
+        tmp = *px1; *px1 = *px2; *px2 = tmp;
+      }
+      if (draw_mazes_wall_intersection(*py1, *px1, *py2, *px2, 1, &y, &x)) {
+        *py1 = y;
+        *px1 = x;
+      }
+      if (draw_mazes_wall_intersection(*py1, *px1, *py2, *px2, -1, &y, &x)) {
+        *py2 = y;
+        *px2 = x;
+      }
+      return YES;
+    }
+    return NO;
+  }
+  if (xy2InViewFlag) {
+    tmp = *py1; *py1 = *py2; *py2 = tmp;
+    tmp = *px1; *px1 = *px2; *px2 = tmp;
+  }
+  if (draw_mazes_wall_intersection(*py1, *px1, *py2, *px2, 1, &y, &x) &&
+      draw_mazes_check_order(*py1, *px1, y, x, *py2, *px2)) {
+    *py2 = y;
+    *px2 = x;
+  }
+  if (draw_mazes_wall_intersection(*py1, *px1, *py2, *px2, -1, &y, &x) &&
+      draw_mazes_check_order(*py1, *px1, y, x, *py2, *px2)) {
+    *py2 = y;
+    *px2 = x;
+  }
+  return YES;
+}
+
+static XY_SPEED_TABLE viewmatrix_delta[9][17];
+void draw_maze_calc_viewmatrix(int microY, int microX, int minYOffset, int minXOffset, int maxYOffset,
+                               int maxXOffset, int isFlipped, int dir) {
+  register int i, j, j2, k;
+  int maxXDelta, maxYDelta, minXDelta, minYDelta;
+  viewmatrix_delta[0][0].deltaY = minYDelta = minYOffset - microY;
+  viewmatrix_delta[0][0].deltaX = minXDelta = minXOffset - microX;
+  viewmatrix_delta[8][16].deltaY = maxYDelta = maxYOffset - microY;
+  viewmatrix_delta[8][16].deltaX = maxXDelta = maxXOffset - microX;
+  if (!isFlipped) {
+    viewmatrix_delta[8][0].deltaY = maxYDelta;
+    viewmatrix_delta[8][0].deltaX = minXDelta;
+    viewmatrix_delta[0][16].deltaY = minYDelta;
+    viewmatrix_delta[0][16].deltaX = maxXDelta;
+  } else {
+    viewmatrix_delta[8][0].deltaY = minYDelta;
+    viewmatrix_delta[8][0].deltaX = maxXDelta;
+    viewmatrix_delta[0][16].deltaY = maxYDelta;
+    viewmatrix_delta[0][16].deltaX = minXDelta;
+  }
+  rotate2d(&viewmatrix_delta[0][0].deltaY, &viewmatrix_delta[0][0].deltaX, dir);
+  rotate2d(&viewmatrix_delta[8][0].deltaY, &viewmatrix_delta[8][0].deltaX, dir);
+  rotate2d(&viewmatrix_delta[0][16].deltaY, &viewmatrix_delta[0][16].deltaX, dir);
+  rotate2d(&viewmatrix_delta[8][16].deltaY, &viewmatrix_delta[8][16].deltaX, dir);
+  for (i = 8; i; i >>= 1)
+    for (j = i; j < 16; j += i + i) {
+      viewmatrix_delta[0][j].deltaY = (viewmatrix_delta[0][j - i].deltaY + viewmatrix_delta[0][j + i].deltaY) >> 1;
+      viewmatrix_delta[0][j].deltaX = (viewmatrix_delta[0][j - i].deltaX + viewmatrix_delta[0][j + i].deltaX) >> 1;
+      viewmatrix_delta[8][j].deltaY = (viewmatrix_delta[8][j - i].deltaY + viewmatrix_delta[8][j + i].deltaY) >> 1;
+      viewmatrix_delta[8][j].deltaX = (viewmatrix_delta[8][j - i].deltaX + viewmatrix_delta[8][j + i].deltaX) >> 1;
+    }
+  for (j = 0; j <= 16; j++)
+    for (j2 = 4; j2; j2 >>= 1)
+      for (k = j2; k < 8; k += j2 + j2) {
+        viewmatrix_delta[k][j].deltaY = (viewmatrix_delta[k - j2][j].deltaY + viewmatrix_delta[k + j2][j].deltaY) >> 1;
+        viewmatrix_delta[k][j].deltaX = (viewmatrix_delta[k - j2][j].deltaX + viewmatrix_delta[k + j2][j].deltaX) >> 1;
+      }
+}
+int draw_mazes_set_wall(int y1p, int x1p, int y2p, int x2p, int color, int leftRightFlag) {
+  int x2, y2, x1, y1;
+  y1 = viewmatrix_delta[y1p][x1p].deltaY;
+  x1 = viewmatrix_delta[y1p][x1p].deltaX;
+  y2 = viewmatrix_delta[y2p][x2p].deltaY;
+  x2 = viewmatrix_delta[y2p][x2p].deltaX;
+  if (draw_mazes_clip_wall(&y1, &x1, &y2, &x2)) {
+    calc_yx_to_xh(&y1, &x1);
+    calc_yx_to_xh(&y2, &x2);
+    return objecttable_set_wall(y1, x1, y2, x2, color, leftRightFlag);
+  }
+  return YES;
+}
+/* sprites are EPIC-07 */
+static void draw_mazes_set_object(int fieldY, int fieldX, int flip) {
+  (void)fieldY;
+  (void)fieldX;
+  (void)flip;
+}
+
+static struct {
+  int minY, minX, maxY, maxX, fieldOffsetY, fieldOffsetX, flipped;
+} dir_table[8] = {
+    {-7, -7, 1, 9, -1, 1, 0},  {8, 8, -8, 0, 1, -1, 1}, {-7, 8, 9, 0, 1, 1, 1},  {8, -7, 0, 9, 1, 1, 0},
+    {8, 8, 0, -8, 1, -1, 0},   {-7, -7, 9, 1, -1, 1, 1}, {8, -7, -8, 1, -1, -1, 1}, {-7, 8, 1, -8, -1, -1, 0},
+};
+short viewposition_direction, viewposition_y, viewposition_x;
+void init_dirtable(void) {
+  for (int i = 0; i < 8; i++) {
+    dir_table[i].minY *= MAZE_CELL_SIZE;
+    dir_table[i].minX *= MAZE_CELL_SIZE;
+    dir_table[i].maxY *= MAZE_CELL_SIZE;
+    dir_table[i].maxX *= MAZE_CELL_SIZE;
+  }
+}
+void draw_maze_generate_renderlist(int y, int x, int fieldOffsetY, int fieldOffsetX, int flip, int leftRightFlag) {
+  register int viewingWidth, viewingDistance, fieldFX, fieldFY;
+  int fieldX, fieldY, _fieldX, _fieldY;
+  objecttable_clear();
+  clear_draw_list();
+  _fieldY = (y >> MAZE_FIELD_SHIFT) | 1;
+  _fieldX = (x >> MAZE_FIELD_SHIFT) | 1;
+  if (!flip) {
+    fieldY = _fieldY;
+    fieldX = _fieldX;
+  } else {
+    fieldY = _fieldX;
+    fieldX = _fieldY;
+  }
+  fieldFY = fieldY;
+  for (viewingDistance = 7; viewingDistance >= 0; viewingDistance--) {
+    viewingWidth = 7;
+    fieldFX = fieldX;
+    do {
+      draw_mazes_set_object(fieldFY, fieldFX, flip);
+      fieldFX -= fieldOffsetX;
+      if (get_maze_data(fieldFY, fieldFX, flip) == MAZE_FIELD_WALL)
+        if (draw_mazes_set_wall(viewingDistance, viewingWidth, viewingDistance + 1, viewingWidth, flip, leftRightFlag ^ 1))
+          break;
+      if (objecttable_check_view_fully_covered()) break;
+      fieldFX -= fieldOffsetX;
+    } while (--viewingWidth >= 0);
+    viewingWidth = 8;
+    fieldFX = fieldX;
+    fieldFX += fieldOffsetX;
+    do {
+      if (get_maze_data(fieldFY, fieldFX, flip) == MAZE_FIELD_WALL)
+        if (draw_mazes_set_wall(viewingDistance, viewingWidth, viewingDistance + 1, viewingWidth, flip, leftRightFlag))
+          break;
+      if (objecttable_check_view_fully_covered()) break;
+      if (viewingWidth == 16) break;
+      fieldFX += fieldOffsetX;
+      draw_mazes_set_object(fieldFY, fieldFX, flip);
+      fieldFX += fieldOffsetX;
+      viewingWidth++;
+    } while (1);
+    fieldFY += fieldOffsetY;
+    fieldFX = fieldX;
+    for (viewingWidth = 7; viewingWidth >= 0; viewingWidth--) {
+      if (get_maze_data(fieldFY, fieldFX, flip) == MAZE_FIELD_WALL)
+        if (draw_mazes_set_wall(viewingDistance, viewingWidth, viewingDistance, viewingWidth + 1, flip ^ 1, leftRightFlag ^ 1))
+          break;
+      if (objecttable_check_view_fully_covered()) break;
+      fieldFX -= fieldOffsetX + fieldOffsetX;
+    }
+    fieldFX = fieldX;
+    fieldFX += fieldOffsetX;
+    fieldFX += fieldOffsetX;
+    for (viewingWidth = 8; viewingWidth < 16; viewingWidth++) {
+      if (get_maze_data(fieldFY, fieldFX, flip) == MAZE_FIELD_WALL)
+        if (draw_mazes_set_wall(viewingDistance, viewingWidth, viewingDistance, viewingWidth + 1, flip ^ 1, leftRightFlag))
+          break;
+      if (objecttable_check_view_fully_covered()) break;
+      fieldFX += fieldOffsetX + fieldOffsetX;
+    }
+    fieldFY += fieldOffsetY;
+    if (objecttable_check_view_fully_covered()) break;
+  }
+}
+void make_draw_list(int y, int x, int dir) {
+  int compassDir;
+  viewposition_y = y;
+  viewposition_x = x;
+  viewposition_direction = dir;
+  compassDir = (dir >> 5) & 7;
+  draw_maze_calc_viewmatrix(y & (MAZE_CELL_SIZE - 1), x & (MAZE_CELL_SIZE - 1), dir_table[compassDir].minY,
+                            dir_table[compassDir].minX, dir_table[compassDir].maxY, dir_table[compassDir].maxX,
+                            dir_table[compassDir].flipped, dir);
+  set_all_player();
+  draw_maze_generate_renderlist(y, x, dir_table[compassDir].fieldOffsetY, dir_table[compassDir].fieldOffsetX,
+                                dir_table[compassDir].flipped, compassDir & 1);
+}
+static void run_view(const char *name, int y, int x, int dir) {
+  reset_world();
+  playerAndDroneCount = 0;
+  make_draw_list(y, x, dir);
+  printf("{\"name\":\"%s\",\"y\":%d,\"x\":%d,\"dir\":%d,\"walls\":[", name, y, x, dir);
+  int first = 1;
+  for (int i = 0; i < draw_elem_count; i++) {
+    if (draw_elem_list[i].type != DRAW_TYPE_WALL) continue;
+    printf("%s{\"color\":%d,\"x1\":%d,\"h1\":%d,\"x2\":%d,\"h2\":%d}", first ? "" : ",",
+           draw_elem_list[i].sprite_wallcolor, draw_elem_list[i].x, draw_elem_list[i].h_shadowOffset,
+           draw_elem_list[i].x2_size, draw_elem_list[i].h2_color);
+    first = 0;
+  }
+  printf("]}");
+}
+
 int main(void) {
+  init_dirtable();
   for (int i = 0; i < 65; i++) sine_table[i] = (short)(sin((double)i / 256.0 * 2.0 * M_PI) * 256.0);
   calc_sin_table();
 
@@ -648,6 +1022,16 @@ int main(void) {
     rotate2d(&x, &y, rang[i]);
     printf("%s{\"x\":%d,\"y\":%d,\"angle\":%d,\"rx\":%d,\"ry\":%d}", i ? "," : "", rx[i], ry[i],
            rang[i], x, y);
+  }
+  printf("],\n");
+
+  int projY[] = {-256, -256, -256, -512, -1024, -128, -2048, -200, -50};
+  int projX[] = {0, 128, -128, 256, -512, 64, 1024, 50, 10};
+  printf("  \"projection\": [");
+  for (int i = 0; i < 9; i++) {
+    int yy = projY[i], xx = projX[i];
+    calc_yx_to_xh(&yy, &xx);
+    printf("%s{\"y\":%d,\"x\":%d,\"sx\":%d,\"h\":%d}", i ? "," : "", projY[i], projX[i], yy, xx);
   }
   printf("],\n");
 
@@ -712,6 +1096,21 @@ int main(void) {
   }
   printf("  \"match\": [");
   run_match("three-players", 4242, MC, matchJoy, MN);
+  printf("],\n");
+
+  /* render-list (wall draw-list) for sample viewpoints on the shared maze */
+  printf("  \"renderlist\": [");
+  run_view("north@1,7", 128, 896, PLAYER_DIR_NORTH);
+  printf(",");
+  run_view("north@7,7", 896, 896, PLAYER_DIR_NORTH);
+  printf(",");
+  run_view("east@1,7", 128, 896, PLAYER_DIR_EAST);
+  printf(",");
+  run_view("south@7,7", 896, 896, PLAYER_DIR_SOUTH);
+  printf(",");
+  run_view("ne@7,7", 896, 896, PLAYER_DIR_NORTHEAST);
+  printf(",");
+  run_view("sw@5,5", 640, 640, PLAYER_DIR_SOUTHWEST);
   printf("],\n");
 
   printf("  \"rng\": {\n    \"seed\": 12345,\n");
