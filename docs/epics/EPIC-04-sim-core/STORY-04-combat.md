@@ -2,7 +2,7 @@
 id: STORY-04
 epic: EPIC-04
 title: Shooting, hits, kills, scoring, respawn
-status: todo
+status: done
 ---
 
 ## Goal
@@ -12,11 +12,12 @@ team/friendly-fire rules, scoring, death, regeneration/respawn.
 
 ## Tasks
 
-- [ ] Fire on button + reload==0; shot spawns at player, inherits direction
-- [ ] Shot motion 3 substeps/tick; wall stop; player-hit detection (`PLAYER_RADIUS`)
-- [ ] Damage/kill, `ply_score`, team + friendly-fire rules, win at `GAME_WIN_SCORE`
-- [ ] Regeneration/respawn timers + `hunt_ply_pos` respawn
-- [ ] Golden trace: a fired shot down a corridor → path + hit tick vs the C harness
+- [x] Fire on button + reload==0; shot spawns at player, inherits direction (`movePlayer`)
+- [x] Shot motion 3 substeps/tick; wall stop; player-hit detection (`moveShoot`)
+- [x] Damage/kill, `ply_score`, team + friendly-fire rules, win at `GAME_WIN_SCORE`
+- [x] Regeneration/respawn timers + `hunt_ply_pos` respawn (refresh block in `movePlayer`)
+- [x] Golden traces vs the C harness: shoot-wall, shoot-hit, kill-respawn (RNG-driven
+      respawn position) — `src/sim/combat.test.ts`; game config on `World`
 
 ## Acceptance
 

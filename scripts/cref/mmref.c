@@ -498,6 +498,12 @@ static void emit_pos(PLY *p) { printf("{\"y\":%d,\"x\":%d,\"dir\":%d}", p->ply_y
 static void emit_state(PLY *p) {
   printf("{\"y\":%d,\"x\":%d,\"dir\":%d,\"lives\":%d}", p->ply_y, p->ply_x, p->ply_dir, p->ply_lives);
 }
+static void emit_full(PLY *p) {
+  printf("{\"y\":%d,\"x\":%d,\"dir\":%d,\"lives\":%d,\"score\":%d,\"hitflag\":%d,\"reload\":%d,"
+         "\"shoot\":%d,\"shootx\":%d,\"shooty\":%d}",
+         p->ply_y, p->ply_x, p->ply_dir, p->ply_lives, p->ply_score, p->ply_hitflag, p->ply_reload,
+         p->ply_shoot, p->ply_shootx, p->ply_shooty);
+}
 static void run_scenario(const char *name, int useObjMap, PLY p0, int hasP1, PLY p1, const int *joy, int n) {
   reset_world();
   player_data[0] = p0;
@@ -518,6 +524,44 @@ static void run_scenario(const char *name, int useObjMap, PLY p0, int hasP1, PLY
     move_player(0, joy[t], 0);
     printf("%s", t ? "," : "");
     emit_pos(&player_data[0]);
+  }
+  printf("]}");
+}
+
+/* Combat scenario: player 0 acts per joy0; others stay idle. Each tick rebuilds
+ * the object map then moves every player, dumping full state for both. */
+static void run_combat(const char *name, int seed, int count, PLY p0, PLY p1, const int *joy0, int n) {
+  reset_world();
+  _random_seed = seed;
+  we_dont_have_a_winner = count;
+  for (int i = 0; i < PLAYER_MAX_TEAMS; i++) team_scores[i] = 0;
+  player_data[0] = p0;
+  if (count > 1) player_data[1] = p1;
+  playerAndDroneCount = count;
+  printf("{\"name\":\"%s\",\"seed\":%d,\"count\":%d,", name, seed, count);
+  printf("\"config\":{\"reload\":%d,\"regen\":%d,\"revive\":%d,\"reviveLives\":%d,\"friendly\":%d,\"team\":%d},",
+         reload_time, regen_time, revive_time, revive_lives, friendly_fire, team_flag);
+  printf("\"start\":");
+  emit_full(&p0);
+  printf(",\"other\":");
+  if (count > 1)
+    emit_full(&p1);
+  else
+    printf("null");
+  printf(",\"joy0\":[");
+  for (int i = 0; i < n; i++) printf("%s%d", i ? "," : "", joy0[i]);
+  printf("],\"trace\":[");
+  for (int t = 0; t < n; t++) {
+    set_all_player();
+    for (int i = 0; i < count; i++) move_player(i, i == 0 ? joy0[t] : 0, 0);
+    printf("%s{\"p0\":", t ? "," : "");
+    emit_full(&player_data[0]);
+    printf(",\"p1\":");
+    if (count > 1)
+      emit_full(&player_data[1]);
+    else
+      printf("null");
+    printf("}");
   }
   printf("]}");
 }
@@ -604,6 +648,25 @@ int main(void) {
   run_scenario("wall-north", 0, mk(128, 896, PLAYER_DIR_NORTH, 3), 0, none, joyFwd, 8);
   printf(",");
   run_scenario("collision-west", 1, mk(128, 384, PLAYER_DIR_WEST, 3), 1, mk(128, 128, PLAYER_DIR_EAST, 3), joyColl, 6);
+  printf("],\n");
+
+  /* combat scenarios (shot motion, hit/kill/score, respawn) on the shared maze */
+  reload_time = 30;
+  regen_time = 100;
+  revive_time = 5;
+  revive_lives = 2;
+  friendly_fire = 0;
+  team_flag = 0;
+  int joyFire[24];
+  joyFire[0] = JOYSTICK_BUTTON;
+  for (int i = 1; i < 24; i++) joyFire[i] = 0;
+  PLY noP1 = mk(0, 0, 0, 0);
+  printf("  \"combat\": [");
+  run_combat("shoot-wall", 0, 1, mk(128, 128, PLAYER_DIR_EAST, 3), noP1, joyFire, 20);
+  printf(",");
+  run_combat("shoot-hit", 0, 2, mk(128, 128, PLAYER_DIR_EAST, 3), mk(128, 1152, PLAYER_DIR_EAST, 3), joyFire, 16);
+  printf(",");
+  run_combat("kill-respawn", 777, 2, mk(128, 128, PLAYER_DIR_EAST, 3), mk(128, 1152, PLAYER_DIR_EAST, 1), joyFire, 24);
   printf("],\n");
 
   printf("  \"rng\": {\n    \"seed\": 12345,\n");

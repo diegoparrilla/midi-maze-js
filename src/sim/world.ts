@@ -32,6 +32,15 @@ export class World {
   objektAnz = 0;
   readonly objectTable: ObjectSlot[];
 
+  // Game config from MIDI_SEND_DATA (set by the master; EPIC-13). Mutable.
+  reloadTime = 0;
+  regenTime = 0;
+  reviveTime = 0;
+  reviveLives = 0;
+  friendlyFire = 0;
+  teamFlag = 0;
+  readonly teamScores = [0, 0, 0, 0];
+
   constructor(maze: Maze, rng: Rng) {
     this.grid = Int8Array.from(maze.data);
     this.mazeSize = maze.size;

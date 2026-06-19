@@ -1,14 +1,16 @@
-// Player movement (gamelogi.c:move_player): rotation, forward/back via the speed
-// table, player-player collision, and wall clamping/corner sliding. Faithful to
-// the original integer math (C-02).
-//
-// The fire / move_shoot / refresh-respawn branches are STORY-04 (combat); they are
-// inert for movement-only input (no button, no damage), so movement traces match
-// the C harness exactly without them.
+// Player movement + combat (gamelogi.c: move_player, move_shoot). Faithful to the
+// original integer math (C-02). Sound/AES/UI side effects are intentionally
+// omitted — they never affect the simulation.
 import { MAZE_FIELD_EMPTY, MAZE_FIELD_WALL } from '../maze';
 import { huntPlyPos } from './setup';
 import { MAZE_CELL_SIZE, PLAYER_MOTION_ROTATE, xySpeedTable } from './speed-table';
-import { MAZE_FIELD_SHIFT, PLAYER_MAX_COUNT, type World } from './world';
+import {
+  GAME_WIN_SCORE,
+  MAZE_FIELD_SHIFT,
+  PLAYER_MAX_COUNT,
+  PLAYER_MAX_LIVES,
+  type World,
+} from './world';
 
 export const JOYSTICK_UP = 0x01;
 export const JOYSTICK_DOWN = 0x02;
@@ -20,9 +22,85 @@ const PLAYER_RADIUS = 48;
 const PLAYER_WALL_DISTANCE = 65;
 const CELL_MASK = MAZE_CELL_SIZE - 1;
 
+/**
+ * move_shoot: advance this player's shot 3 substeps (a shot is 3x player speed),
+ * stopping on a wall, and apply hits (damage, scoring, win, death timers).
+ */
+export function moveShoot(world: World, player: number): void {
+  const pd = world.players;
+  const p = pd[player]!;
+  let hasShot = true;
+  let shotY = p.ply_shooty;
+  let shotX = p.ply_shootx;
+  const shotDirection = p.ply_shootr;
+  let shotYField = (shotY >> MAZE_FIELD_SHIFT) | 1;
+  let shotXField = (shotX >> MAZE_FIELD_SHIFT) | 1;
+
+  for (let z = 0; z < 3; z++) {
+    shotY += xySpeedTable[shotDirection]!.deltaY;
+    shotX += xySpeedTable[shotDirection]!.deltaX;
+    const saveY = shotYField;
+    const saveX = shotXField;
+    shotYField = (shotY >> MAZE_FIELD_SHIFT) | 1;
+    shotXField = (shotX >> MAZE_FIELD_SHIFT) | 1;
+    if (
+      (shotYField !== saveY || shotXField !== saveX) &&
+      world.getMazeData((saveY + shotYField) >> 1, (saveX + shotXField) >> 1) === MAZE_FIELD_WALL
+    ) {
+      p.ply_shoot = 0;
+      break;
+    }
+
+    for (let xOffset = -2; xOffset <= 2 && hasShot; xOffset += 2) {
+      for (let yOffset = -2; yOffset <= 2 && hasShot; yOffset += 2) {
+        let objectID = world.getMazeData(xOffset + shotYField, yOffset + shotXField, false);
+        while (objectID !== MAZE_FIELD_EMPTY) {
+          if (objectID < PLAYER_MAX_COUNT) {
+            const o = pd[objectID]!;
+            if (player !== objectID && o.ply_lives > 0) {
+              const distanceY = Math.abs(o.ply_y - shotY);
+              const distanceX = Math.abs(o.ply_x - shotX);
+              if (distanceY <= PLAYER_RADIUS && distanceX <= PLAYER_RADIUS) {
+                o.ply_hitflag = 1;
+                o.ply_gunman = player;
+                if (
+                  !world.teamFlag ||
+                  p.ply_team !== o.ply_team ||
+                  (!world.friendlyFire && o.ply_lives !== 1)
+                ) {
+                  o.ply_refresh = world.regenTime;
+                  if (--o.ply_lives === 0) {
+                    o.ply_refresh = world.reviveTime;
+                    p.ply_score++;
+                    if (world.teamFlag) {
+                      const t = p.ply_team;
+                      const score = world.teamScores[t]! + 1;
+                      world.teamScores[t] = score;
+                      if (score === GAME_WIN_SCORE) world.weDontHaveAWinner = 0;
+                    } else if (p.ply_score === GAME_WIN_SCORE) {
+                      world.weDontHaveAWinner = 0;
+                    }
+                  }
+                  p.ply_looser = objectID;
+                }
+                p.ply_shoot = 0;
+                hasShot = false;
+              }
+            }
+            objectID = pd[objectID]!.ply_plist;
+          } else {
+            objectID = pd[objectID - PLAYER_MAX_COUNT]!.ply_slist;
+          }
+        }
+      }
+    }
+  }
+  p.ply_shooty = shotY;
+  p.ply_shootx = shotX;
+}
+
 /** move_player: advance one player by `joystickData`. Returns false on the fatal
- *  "boxed in" case (maze too small). `dronesActiveFlag` only affects the drone
- *  idle marker. */
+ *  "boxed in"/respawn-failure case (maze too small). */
 export function movePlayer(
   world: World,
   player: number,
@@ -32,9 +110,17 @@ export function movePlayer(
   const pd = world.players;
   const p = pd[player]!;
 
-  // TODO(STORY-04): refresh/revive block (regenerate lives, respawn via hunt).
+  // Refresh pending: regenerate a life and, if the player was dead, respawn.
+  if (p.ply_refresh > 0 && --p.ply_refresh === 0) {
+    if (++p.ply_lives < PLAYER_MAX_LIVES) p.ply_refresh = world.regenTime;
+    if (p.ply_lives === 1) {
+      if ((p.ply_lives = world.reviveLives) === PLAYER_MAX_LIVES) p.ply_refresh = 0;
+      if (!huntPlyPos(world, player)) return false;
+    }
+  }
+
   if (p.ply_lives === 0) {
-    // TODO(STORY-04): if (p.ply_shoot) moveShoot(world, player);
+    if (p.ply_shoot) moveShoot(world, player);
     if (p.ply_reload) p.ply_reload--;
     return true;
   }
@@ -44,7 +130,15 @@ export function movePlayer(
   else if (joystickData & JOYSTICK_RIGHT) direction += PLAYER_MOTION_ROTATE;
   direction &= 255;
 
-  // TODO(STORY-04): fire block + moveShoot.
+  // Fire a shot.
+  if ((joystickData & JOYSTICK_BUTTON) === JOYSTICK_BUTTON && p.ply_reload === 0) {
+    p.ply_shootr = direction;
+    p.ply_shoot = 10;
+    p.ply_reload = world.reloadTime;
+    p.ply_shooty = p.ply_y;
+    p.ply_shootx = p.ply_x;
+  }
+  if (p.ply_shoot) moveShoot(world, player);
   if (p.ply_reload) p.ply_reload--;
 
   let speedY: number;
