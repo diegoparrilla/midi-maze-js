@@ -9,6 +9,7 @@
 //   0x0B7BE face shapes (24 sizes x 20 rotations, 1bpp)
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { deflateSync } from 'node:zlib';
 import { mazeToAscii, parseMaz } from '../src/maze.ts';
 
 const here = (p: string): string => fileURLToPath(new URL(p, import.meta.url));
@@ -100,6 +101,88 @@ function writeJson(name: string, value: unknown): void {
   console.log(`  wrote ${name}`);
 }
 
+// --- main-screen (synth dashboard) image: RLE + 4 bitplanes -> 320x200 indices ---
+const SCREEN_COLOR_OFF = 0x00000;
+const SCREEN_W = 320;
+const SCREEN_H = 200;
+
+function decodeMainScreen(d8a: Uint8Array): Uint8Array {
+  const data = d8a.subarray(SCREEN_COLOR_OFF);
+  const lineDataCount = (data[2]! << 8) | data[3]!;
+  let offData = 4;
+  let offImg = 4 + lineDataCount;
+  const planes: number[] = [];
+  for (let k = 0; k < lineDataCount >> 1; k++) {
+    const nLines = data[offData++]!;
+    for (let l = 0; l < nLines; l++) {
+      planes.push((data[offImg]! << 8) | data[offImg + 1]!);
+      offImg += 2;
+    }
+    const nSkip = data[offData++]!;
+    for (let l = 0; l < nSkip; l++) planes.push(0);
+  }
+  // re-sort into Atari screen-buffer order
+  const screen = new Array<number>(16000);
+  for (let i = 0; i < 16000; i++) screen[i] = planes[(i % 80) * 200 + ((i / 80) | 0)]!;
+  // 4 bitplanes -> palette indices
+  const indices = new Uint8Array(SCREEN_W * SCREEN_H);
+  for (let y = 0; y < SCREEN_H; y++) {
+    const scro = y * 80;
+    for (let xw = 0; xw < 80; xw += 4) {
+      const p0 = screen[scro + xw]!;
+      const p1 = screen[scro + xw + 1]!;
+      const p2 = screen[scro + xw + 2]!;
+      const p3 = screen[scro + xw + 3]!;
+      for (let x = 15; x >= 0; x--) {
+        const color =
+          (((p3 >> x) & 1) << 3) |
+          (((p2 >> x) & 1) << 2) |
+          (((p1 >> x) & 1) << 1) |
+          ((p0 >> x) & 1);
+        indices[y * SCREEN_W + (15 - x) + xw * 4] = color;
+      }
+    }
+  }
+  return indices;
+}
+
+function crc32(buf: Uint8Array): number {
+  let c = ~0;
+  for (let i = 0; i < buf.length; i++) {
+    c ^= buf[i]!;
+    for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+  }
+  return ~c >>> 0;
+}
+function pngChunk(type: string, data: Buffer): Buffer {
+  const typeBuf = Buffer.from(type, 'ascii');
+  const body = Buffer.concat([typeBuf, data]);
+  const out = Buffer.alloc(12 + data.length);
+  out.writeUInt32BE(data.length, 0);
+  body.copy(out, 4);
+  out.writeUInt32BE(crc32(body), 8 + data.length);
+  return out;
+}
+function encodePng(width: number, height: number, rgb: Buffer): Buffer {
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // colour type RGB
+  const raw = Buffer.alloc(height * (1 + width * 3));
+  for (let y = 0; y < height; y++) {
+    raw[y * (1 + width * 3)] = 0; // filter: none
+    rgb.copy(raw, y * (1 + width * 3) + 1, y * width * 3, (y + 1) * width * 3);
+  }
+  return Buffer.concat([
+    sig,
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', deflateSync(raw)),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
 function main(): void {
   mkdirSync(`${OUT}/mazes`, { recursive: true });
   const data = new Uint8Array(readFileSync(D8A));
@@ -127,6 +210,18 @@ function main(): void {
   const faces = readShapes(data, FACE_OFF, FACE_LEN, BODY_SHAPE_FACE_COUNT);
   writeJson('ball-shapes.json', balls);
   writeJson('face-shapes.json', faces);
+
+  // --- main-screen dashboard (synth panel) as a PNG background ---
+  const screenIdx = decodeMainScreen(data);
+  const rgb = Buffer.alloc(SCREEN_W * SCREEN_H * 3);
+  for (let i = 0; i < screenIdx.length; i++) {
+    const c = palette[screenIdx[i]!]!.rgb;
+    rgb[i * 3] = c[0];
+    rgb[i * 3 + 1] = c[1];
+    rgb[i * 3 + 2] = c[2];
+  }
+  writeFileSync(`${OUT}/main-screen.png`, encodePng(SCREEN_W, SCREEN_H, rgb));
+  console.log('  wrote main-screen.png');
 
   // --- ASCII preview: largest ball + the 20 faces of the largest size ---
   const preview: string[] = ['# Shape preview (largest size) — manual visual check', ''];

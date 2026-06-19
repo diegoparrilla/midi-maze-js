@@ -1,4 +1,5 @@
 import './style.css';
+import dashboardUrl from './assets/generated/main-screen.png';
 import midimazeRaw from './assets/generated/mazes/midimaze.json';
 import { drawCrosshair, drawHappyIndicator, drawScoreboard } from './render/hud';
 import { drawMap2D } from './render/map2d';
@@ -46,6 +47,14 @@ starts.forEach((s, i) => {
   p.ply_dir = s.dir;
 });
 
+// Synth-dashboard background (the maze view + HUD are drawn into its panels).
+const dashboard = new Image();
+let dashboardReady = false;
+dashboard.onload = () => {
+  dashboardReady = true;
+};
+dashboard.src = dashboardUrl;
+
 let mapMode = false;
 const keys = new Set<string>();
 window.addEventListener('keydown', (e) => {
@@ -79,6 +88,11 @@ function frame(): void {
   if (mapMode) {
     drawMap2D(ctx!, world);
   } else {
+    if (dashboardReady) ctx!.drawImage(dashboard, 0, 0);
+    else {
+      ctx!.fillStyle = '#000';
+      ctx!.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+    }
     drawView3D(ctx!, world, p.ply_y, p.ply_x, p.ply_dir, 0);
     if (p.ply_reload === 0 && p.ply_lives > 0) drawCrosshair(ctx!, 0);
     drawHappyIndicator(ctx!, world, 0);

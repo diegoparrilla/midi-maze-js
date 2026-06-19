@@ -116,9 +116,8 @@ export function drawView3D(
   dir: number,
   ownNumber = -1,
 ): void {
-  // Black backdrop (the HUD areas are filled in EPIC-07).
-  ctx.fillStyle = PAL[COLOR_BLACK]!;
-  ctx.fillRect(0, 0, 320, 200);
+  // Only the 160x100 view window is (re)painted; the dashboard background and HUD
+  // panels around it are drawn by the caller.
   clearWindow(ctx);
 
   const elems = makeDrawList(world, y, x, dir, ownNumber);

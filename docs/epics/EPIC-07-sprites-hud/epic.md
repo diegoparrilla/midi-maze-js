@@ -17,6 +17,7 @@ Distance-scaled eyeball faces and shadows, crosshair, happy indicator, and score
 - STORY-02: Sprite rasterization — `draw_shape` (body + face + shadow, per-player
   colours) into the canvas; visible opponents.
 - STORY-03: HUD — crosshair, happy indicator, scoreboard (`happyind.c`, `notebrd.c`).
+- STORY-04: Main-screen dashboard background (the synth panel from `MIDIMAZE.D8A`).
 
 ## Notes
 
