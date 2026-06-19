@@ -2,7 +2,7 @@
 id: EPIC-06
 iteration: 2
 title: Pixel-faithful wall renderer
-status: in-progress
+status: done
 ---
 
 ## Goal
