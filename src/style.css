@@ -145,11 +145,11 @@ body {
   cursor: pointer;
 }
 
-/* ---- Orientation gate ---- */
+/* ---- Orientation gate (above everything, incl. the lobby) ---- */
 #rotate-overlay {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 40;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -174,7 +174,7 @@ body {
   }
 }
 
-/* ---- Minimal in-game menu ---- */
+/* ---- In-game menu (GEM/TOS styled, reuses the .gem-* dialog widgets) ---- */
 #menu-overlay {
   position: fixed;
   inset: 0;
@@ -182,39 +182,190 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.4);
+  font-family: Geneva, Verdana, 'DejaVu Sans', sans-serif;
+  color: #000;
 }
-.menu-panel {
+.gem-menu {
+  width: min(80vw, 240px);
+}
+.gem-menu-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 20px 28px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  background: #1b1b22;
-  min-width: 180px;
+  gap: 8px;
+  padding: 12px 14px;
 }
-.menu-panel h2 {
-  margin: 0 0 6px;
-  font:
-    600 16px system-ui,
-    sans-serif;
-  color: #cfcfcf;
+.gem-menu .gem-btn {
+  width: 100%;
+  padding: 8px 10px;
   text-align: center;
 }
-.menu-panel button {
-  padding: 10px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 6px;
-  background: #2a2a34;
-  color: #e0e0e0;
-  font:
-    14px system-ui,
-    sans-serif;
+.gem-menu .gem-default {
+  margin-top: 4px;
+}
+
+/* ---- Lobby (EPIC-20): a GEM / Atari TOS dialog floating over the playfield ---- */
+#lobby {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Dim the playfield behind so the dialog reads; the maze stays visible. */
+  background: rgba(0, 0, 0, 0.4);
+  overflow: auto;
+  font-family: Geneva, Verdana, 'DejaVu Sans', sans-serif;
+  color: #000;
+}
+.gem-dialog {
+  width: min(94vw, 460px);
+  margin: auto;
+  background: #cfcfcf; /* GEM window gray */
+  border: 2px solid #000;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.45);
+}
+.gem-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  border-bottom: 2px solid #000;
+  /* striped GEM/AES active-title bar */
+  background: repeating-linear-gradient(#000 0 1px, #cfcfcf 1px 3px);
+}
+.gem-title span {
+  padding: 0 10px;
+  background: #cfcfcf;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+.gem-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+}
+.grow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 22px;
+  font-size: 13px;
+}
+.grow > label {
+  white-space: nowrap;
+}
+
+/* GEM 3D beveled button */
+.gem-btn {
+  min-width: 30px;
+  padding: 3px 10px;
+  background: #cfcfcf;
+  color: #000;
+  border: 1px solid #000;
+  box-shadow:
+    inset 1px 1px 0 #fff,
+    inset -1px -1px 0 #7a7a7a;
+  font: inherit;
+  line-height: 1;
   cursor: pointer;
 }
-.menu-panel button:active {
-  background: #3a3a46;
+.gem-btn:active {
+  box-shadow:
+    inset -1px -1px 0 #fff,
+    inset 1px 1px 0 #7a7a7a;
+}
+/* default (exit) button: heavy GEM outline */
+.gem-default {
+  margin: 2px;
+  padding: 5px 26px;
+  font-weight: 700;
+  outline: 2px solid #000;
+  outline-offset: 2px;
+}
+.gem-actions {
+  display: flex;
+  justify-content: center;
+  padding: 6px 14px 14px;
+}
+
+/* white inset text field */
+.gem-input {
+  width: 120px;
+  padding: 3px 6px;
+  background: #fff;
+  color: #000;
+  border: 1px solid #000;
+  box-shadow: inset 1px 1px 0 #7a7a7a;
+  font: inherit;
+}
+
+/* radios: empty ring / filled dot when selected (GEM radio button) */
+.gem-radios {
+  display: inline-flex;
+  gap: 14px;
+}
+.gem-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  color: #000;
+  font: inherit;
+  cursor: pointer;
+}
+.gem-radio::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border: 1px solid #000;
+  border-radius: 50%;
+  background: #fff;
+  box-sizing: border-box;
+}
+.gem-radio.sel::before {
+  background: #000;
+  box-shadow: inset 0 0 0 2px #fff;
+}
+
+/* checkbox: a box that shows an X when on (GEM check) */
+.gem-check {
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border: 1px solid #000;
+  box-shadow: inset 1px 1px 0 #7a7a7a;
+  font:
+    700 12px/14px Geneva,
+    sans-serif;
+  color: #000;
+  cursor: pointer;
+}
+.gem-check.on::after {
+  content: '✕';
+}
+
+/* selectors: maze ‹ ›, drone +/- */
+.gem-sel,
+.gem-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.gem-sel .maze-val {
+  min-width: 92px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 12px;
+}
+.gem-step b {
+  min-width: 18px;
+  text-align: center;
+  font-weight: 700;
 }
 
 [hidden] {

@@ -36,16 +36,28 @@ describe('findWinner', () => {
 });
 
 describe('GameFlow', () => {
-  it('starts in preview and does not step the sim until the timer elapses', () => {
+  it('starts in the lobby and holds until startGame()', () => {
     const w = makeWorld(2);
     const flow = new GameFlow();
+    expect(flow.phase).toBe('lobby');
+    for (let i = 0; i < 5; i++) {
+      expect(flow.tick(w)).toBe(false);
+      expect(flow.phase).toBe('lobby');
+    }
+    flow.startGame();
     expect(flow.phase).toBe('preview');
+    expect(flow.timer).toBe(PREVIEW_TICKS);
+  });
+
+  it('runs the preview countdown then enters playing', () => {
+    const w = makeWorld(2);
+    const flow = new GameFlow();
+    flow.startGame();
     for (let i = 0; i < PREVIEW_TICKS - 1; i++) {
       expect(flow.tick(w)).toBe(false);
       expect(flow.phase).toBe('preview');
     }
-    // final preview tick flips to playing (still no step this frame)
-    expect(flow.tick(w)).toBe(false);
+    expect(flow.tick(w)).toBe(false); // final preview tick flips to playing
     expect(flow.phase).toBe('playing');
   });
 
@@ -65,7 +77,7 @@ describe('GameFlow', () => {
     expect(flow.timer).toBe(GAMEOVER_TICKS);
   });
 
-  it('holds the game-over screen, then allows restart back to preview', () => {
+  it('holds the game-over screen, then restarts back to the lobby', () => {
     const w = makeWorld(2);
     const flow = new GameFlow();
     flow.phase = 'gameover';
@@ -76,8 +88,7 @@ describe('GameFlow', () => {
     expect(flow.canRestart()).toBe(true);
 
     flow.restart();
-    expect(flow.phase).toBe('preview');
-    expect(flow.timer).toBe(PREVIEW_TICKS);
+    expect(flow.phase).toBe('lobby');
     expect(flow.winner).toBe(-1);
   });
 });
