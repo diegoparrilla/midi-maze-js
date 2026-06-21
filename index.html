@@ -63,6 +63,28 @@
         <div class="gem-title"><span>MIDI MAZE</span></div>
         <div class="gem-body">
           <div class="grow">
+            <label>Mode</label>
+            <span class="gem-radios" data-radio="mode">
+              <button class="gem-radio" data-val="solo">Solo</button>
+              <button class="gem-radio" data-val="host">Host</button>
+              <button class="gem-radio" data-val="join">Join</button>
+            </span>
+          </div>
+          <div class="grow net-only">
+            <label>Server</label>
+            <input id="cfg-url" class="gem-input wide" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="grow net-only">
+            <label>Room</label>
+            <input
+              id="cfg-room"
+              class="gem-input"
+              maxlength="16"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+          <div class="grow">
             <label>Name</label>
             <input
               id="cfg-name"
@@ -72,7 +94,7 @@
               spellcheck="false"
             />
           </div>
-          <div class="grow">
+          <div class="grow game-only">
             <label>Maze</label>
             <span class="gem-sel">
               <button class="gem-btn" data-maze="-1" aria-label="previous maze">&lsaquo;</button>
@@ -80,28 +102,28 @@
               <button class="gem-btn" data-maze="1" aria-label="next maze">&rsaquo;</button>
             </span>
           </div>
-          <div class="grow">
+          <div class="grow game-only">
             <label>Reload</label>
             <span class="gem-radios" data-radio="reload">
               <button class="gem-radio" data-val="fast">Fast</button>
               <button class="gem-radio" data-val="slow">Slow</button>
             </span>
           </div>
-          <div class="grow">
+          <div class="grow game-only">
             <label>Regen</label>
             <span class="gem-radios" data-radio="regen">
               <button class="gem-radio" data-val="fast">Fast</button>
               <button class="gem-radio" data-val="slow">Slow</button>
             </span>
           </div>
-          <div class="grow">
+          <div class="grow game-only">
             <label>Revive</label>
             <span class="gem-radios" data-radio="revive">
               <button class="gem-radio" data-val="fast">Fast</button>
               <button class="gem-radio" data-val="slow">Slow</button>
             </span>
           </div>
-          <div class="grow">
+          <div class="grow game-only">
             <label>Lives</label>
             <span class="gem-radios" data-radio="lives">
               <button class="gem-radio" data-val="1">1</button>
@@ -109,15 +131,15 @@
               <button class="gem-radio" data-val="3">3</button>
             </span>
           </div>
-          <div class="grow">
+          <div class="grow game-only">
             <label>Friendly fire</label>
             <button class="gem-check" data-check="friendly" aria-label="friendly fire"></button>
           </div>
-          <div class="grow">
+          <div class="grow game-only">
             <label>Teams</label>
             <button class="gem-check" data-check="teams" aria-label="teams"></button>
           </div>
-          <div class="grow">
+          <div class="grow game-only">
             <label>Target drones</label>
             <span class="gem-step">
               <button class="gem-btn" data-drone-dn="0">&minus;</button>
@@ -125,7 +147,7 @@
               <button class="gem-btn" data-drone-up="0">+</button>
             </span>
           </div>
-          <div class="grow">
+          <div class="grow game-only">
             <label>Standard drones</label>
             <span class="gem-step">
               <button class="gem-btn" data-drone-dn="1">&minus;</button>
@@ -133,7 +155,7 @@
               <button class="gem-btn" data-drone-up="1">+</button>
             </span>
           </div>
-          <div class="grow">
+          <div class="grow game-only">
             <label>Ninja drones</label>
             <span class="gem-step">
               <button class="gem-btn" data-drone-dn="2">&minus;</button>

@@ -302,6 +302,9 @@ body {
   box-shadow: inset 1px 1px 0 #7a7a7a;
   font: inherit;
 }
+.gem-input.wide {
+  width: 190px;
+}
 
 /* radios: empty ring / filled dot when selected (GEM radio button) */
 .gem-radios {
