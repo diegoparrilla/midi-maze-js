@@ -2,7 +2,7 @@
 id: EPIC-13
 iteration: 4
 title: Protocol: election, count, seed, send-data
-status: todo
+status: done
 ---
 
 ## Goal
@@ -15,7 +15,18 @@ SEND_DATA, not a separate exchange).
 
 ## Stories
 
-Authored at the start of iteration 4 (just-in-time, per ITERATIONS.md).
+- STORY-01: Control bytes + `MIDI_SEND_DATA` codec — encode/decode the shared data
+  block (names, maze-size, reload/regen/revive, lives, 3 drone counts, 4096 maze,
+  team-flag, 16 teams, friendly-fire, 2-byte seed) ↔ `GameConfig`/maze/seed,
+  byte-exact to `MIDICommunication.md`. Pure, unit-tested (round-trip + field order).
+- STORY-02: Election + COUNT-PLAYERS state machine — Host emits `0x00` once → master
+  (self-echo / round the ring); Join → slave on receiving `0x00`; `0x80 0x00`
+  COUNT-PLAYERS tally → `machines_online`, `own_number`. Drives over a byte stream
+  (D-11 Host/Join, C-04 no storm); tested with a loopback channel.
+- STORY-03: Setup exchange — `runSetup(transport, role, config)` ties election →
+  count → `START_GAME (0x84)` → `SEND_DATA (0x83)` (names accumulate round the ring)
+  into a shared `{config, maze, seed, ownNumber, machinesOnline}` on master and
+  slave. Integration-tested against a live `orchestrator.py --ws` ring-of-one.
 
 ## Notes
 
