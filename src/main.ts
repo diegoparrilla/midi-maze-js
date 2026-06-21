@@ -13,9 +13,19 @@ import {
   TIME_REVIVE_SLOW,
   totalDrones,
 } from './game/config';
-import { GameFlow } from './game/flow';
+import { findWinner, GameFlow, GAMEOVER_TICKS } from './game/flow';
 import { Input, type Control } from './game/input';
 import { loadMazeById, MAZE_OPTIONS } from './game/mazes';
+import {
+  defaultNetConfig,
+  defaultOrchestratorUrl,
+  isValidNet,
+  type NetConfig,
+} from './net/netconfig';
+import { type NetEnd, NetGame } from './net/netgame';
+import { MIDI_TERMINATE_GAME } from './net/protocol';
+import { connectSession } from './net/session';
+import type { SetupResult } from './net/setup';
 import { drawCrosshair, drawHappyIndicator, drawScoreboard } from './render/hud';
 import { drawMap2D } from './render/map2d';
 import { VIEW_SCREEN_X, VIEW_SCREEN_Y, VIEW_WIDTH } from './render/projection';
@@ -84,18 +94,124 @@ const input = new Input();
 let mapMode = false;
 let orientationBlocked = false;
 
-/** Leave the lobby and start a configured game. */
-function startGame(): void {
-  world = newWorld(config);
-  mapMode = false;
-  flow.startGame();
-  lobby.hidden = true;
+// Networking (EPIC-15). The lobby picks the mode; host/join run over the orchestrator.
+const netConfig: NetConfig = defaultNetConfig();
+netConfig.url = defaultOrchestratorUrl(location.hostname || 'localhost');
+let cameraIndex = 0; // the local player's index (0 for solo, ownNumber when networked)
+let netActive = false; // true while connecting / previewing / playing a networked game
+let quitRequested = false; // local quit during net play → inject TERMINATE_GAME
+
+/** Build the shared world from a completed setup handshake (networked game). */
+function buildNetWorld(setup: SetupResult): World {
+  const w = new World(setup.maze, new Rng(setup.seed));
+  w.machinesOnline = setup.machinesOnline;
+  applyConfig(w, setup.config, setup.machinesOnline);
+  assignDroneTypes(w, setup.machinesOnline);
+  droneSetup(w, setup.machinesOnline);
+  const total =
+    setup.machinesOnline +
+    w.activeDronesByType[0]! +
+    w.activeDronesByType[1]! +
+    w.activeDronesByType[2]!;
+  initAllPlayer(w, total, true);
+  w.weDontHaveAWinner = 1;
+  return w;
 }
 
-/** End the current game and return to the lobby. */
+function setStatus(text: string): void {
+  if (status && !hintActive) status.textContent = text;
+}
+
+/** Leave the lobby and start a game — solo (offline) or networked (host/join). */
+function startGame(): void {
+  lobby.hidden = true;
+  mapMode = false;
+  quitRequested = false;
+  if (netConfig.mode === 'solo') {
+    cameraIndex = 0;
+    world = newWorld(config);
+    flow.startGame();
+    return;
+  }
+  void runNetSession();
+}
+
+/** Connect, handshake, then drive the networked game loop; return to the lobby on end. */
+async function runNetSession(): Promise<void> {
+  netActive = true;
+  drawDashboard();
+  setStatus(`${netConfig.mode === 'host' ? 'hosting' : 'joining'} — connecting…`);
+
+  const session = await connectSession(netConfig, config, (seed++ & 0xffff) | 1, {
+    onStatus: (s) => setStatus(s === 'open' ? 'handshaking…' : `net: ${s}`),
+    connectTimeoutMs: 6000,
+    handshakeTimeoutMs: 8000,
+  }).catch((e: unknown) => {
+    setStatus(`could not connect — ${(e as Error).message}`);
+    return null;
+  });
+  if (!session) {
+    netActive = false;
+    flow.restart();
+    lobby.hidden = false;
+    return;
+  }
+
+  world = buildNetWorld(session.setup);
+  cameraIndex = session.setup.ownNumber;
+
+  // Map preview (synchronised by the handshake completing on every node).
+  flow.startGame();
+  while (flow.timer > 0) {
+    flow.timer--;
+    renderWorld();
+    setStatus(`get ready — ${Math.ceil(flow.timer / 60)}s`);
+    await nextFrame();
+  }
+  flow.phase = 'playing';
+
+  const game = new NetGame({
+    world,
+    ownNumber: session.setup.ownNumber,
+    machinesOnline: session.setup.machinesOnline,
+    localInput: () => (quitRequested ? MIDI_TERMINATE_GAME : input.joyByte()),
+    onTick: () => {
+      renderWorld();
+      const p = world.players[cameraIndex]!;
+      setStatus(`net · field (${p.ply_x >> 7},${p.ply_y >> 7}) · score ${p.ply_score}/10`);
+    },
+  });
+
+  let end: NetEnd | null = null;
+  try {
+    do {
+      end = await game.runTick(session.channel);
+    } while (!end);
+  } catch {
+    end = 'timeout';
+  }
+  session.transport.close();
+
+  flow.winner = end === 'winner' ? findWinner(world) : -1;
+  flow.phase = 'gameover';
+  flow.timer = GAMEOVER_TICKS;
+  netActive = false; // hand rendering back to the rAF loop for game-over + restart
+  if (end !== 'winner') setStatus(end === 'terminated' ? 'game ended' : 'ring dropped');
+}
+
+/** End the current game and return to the lobby (or signal a networked quit). */
 function quitToLobby(): void {
+  if (netActive) {
+    quitRequested = true; // the net loop injects TERMINATE and tears down cleanly
+    return;
+  }
   flow.restart(); // -> 'lobby'
   lobby.hidden = false;
+}
+
+/** Resolve on the next animation frame (paces the networked preview). */
+function nextFrame(): Promise<void> {
+  return new Promise((r) => requestAnimationFrame(() => r()));
 }
 
 // Synth-dashboard background (the maze view + HUD are drawn into its panels).
@@ -266,6 +382,8 @@ function radioValue(group: string): string {
       return config.reviveTime === TIME_REVIVE_FAST ? 'fast' : 'slow';
     case 'lives':
       return String(config.reviveLives);
+    case 'mode':
+      return netConfig.mode;
     default:
       return '';
   }
@@ -273,6 +391,9 @@ function radioValue(group: string): string {
 
 function applyRadio(group: string, val: string): void {
   switch (group) {
+    case 'mode':
+      netConfig.mode = val as NetConfig['mode'];
+      break;
     case 'reload':
       config.reloadTime = val === 'fast' ? TIME_RELOAD_FAST : TIME_RELOAD_SLOW;
       break;
@@ -313,6 +434,22 @@ function renderLobby(): void {
   }
   const name = lobby.querySelector<HTMLInputElement>('#cfg-name');
   if (name && name.value !== config.playerName) name.value = config.playerName;
+
+  // Connection rows: server/room only when networked; the game-rule rows are the
+  // host's job, so a join (which adopts them over the wire) hides them.
+  lobby.querySelectorAll<HTMLElement>('.net-only').forEach((el) => {
+    el.hidden = netConfig.mode === 'solo';
+  });
+  lobby.querySelectorAll<HTMLElement>('.game-only').forEach((el) => {
+    el.hidden = netConfig.mode === 'join';
+  });
+  const url = lobby.querySelector<HTMLInputElement>('#cfg-url');
+  if (url && url.value !== netConfig.url) url.value = netConfig.url;
+  const room = lobby.querySelector<HTMLInputElement>('#cfg-room');
+  if (room && room.value !== netConfig.room) room.value = netConfig.room;
+
+  const start = lobby.querySelector<HTMLButtonElement>('#lobby-start');
+  if (start) start.disabled = !isValidNet(netConfig);
 }
 
 function wireLobby(): void {
@@ -360,6 +497,13 @@ function wireLobby(): void {
   lobby.querySelector<HTMLInputElement>('#cfg-name')?.addEventListener('input', (e) => {
     config.playerName = (e.target as HTMLInputElement).value.toUpperCase().slice(0, 8);
   });
+  lobby.querySelector<HTMLInputElement>('#cfg-url')?.addEventListener('input', (e) => {
+    netConfig.url = (e.target as HTMLInputElement).value.trim();
+    renderLobby(); // re-validate Start
+  });
+  lobby.querySelector<HTMLInputElement>('#cfg-room')?.addEventListener('input', (e) => {
+    netConfig.room = (e.target as HTMLInputElement).value.trim().toUpperCase();
+  });
   $<HTMLButtonElement>('#lobby-start').addEventListener('click', startGame);
 }
 
@@ -387,7 +531,7 @@ function drawDashboard(): void {
 
 /** Killer's face + greeting, shown while the player waits to respawn (maingame.c). */
 function drawDeadView(): void {
-  const gunman = world.players[0]!.ply_gunman;
+  const gunman = world.players[cameraIndex]!.ply_gunman;
   fillView('#6b6b6b');
   drawShape(ctx!, 48, BODY_SHAPE_MAX_SIZE, BODY_SHAPE_FRONT_VIEW, BODY_SHAPE_NO_SHADOW, gunman);
   viewText(`Player ${gunman} says:`, 14);
@@ -401,14 +545,48 @@ function drawGameOver(): void {
   const w = flow.winner;
   if (w >= 0) {
     drawShape(ctx!, 48, BODY_SHAPE_MAX_SIZE, BODY_SHAPE_FRONT_VIEW, BODY_SHAPE_NO_SHADOW, w);
-    viewText(w === 0 ? 'You win!' : `Player ${w} wins!`, 14);
+    viewText(w === cameraIndex ? 'You win!' : `Player ${w} wins!`, 14);
   }
   if (flow.canRestart()) viewText('press any key', 92);
+}
+
+/** Render the world for the current flow phase, from the local player's view. */
+function renderWorld(): void {
+  const p = world.players[cameraIndex]!;
+  if (flow.phase === 'gameover') {
+    drawGameOver();
+  } else if (flow.phase === 'preview' || mapMode) {
+    drawDashboard();
+    drawMap2D(ctx!, world);
+    drawHappyIndicator(ctx!, world, cameraIndex);
+    drawScoreboard(ctx!, world);
+  } else {
+    drawDashboard();
+    if (p.ply_lives > 0) {
+      drawView3D(ctx!, world, p.ply_y, p.ply_x, p.ply_dir, cameraIndex);
+      if (p.ply_reload === 0) drawCrosshair(ctx!, cameraIndex);
+      if (p.ply_hitflag) {
+        ctx!.fillStyle = 'rgba(255,0,0,0.45)';
+        ctx!.fillRect(VIEW_SCREEN_X, VIEW_SCREEN_Y, VIEW_WIDTH, 100);
+      }
+    } else {
+      drawDeadView();
+    }
+    drawHappyIndicator(ctx!, world, cameraIndex);
+    drawScoreboard(ctx!, world);
+  }
 }
 
 function frame(): void {
   if (orientationBlocked || menuOpen()) {
     requestAnimationFrame(frame); // hold the game until landscape / menu close
+    return;
+  }
+
+  // A networked game owns its own render (driven by the lock-step loop, gated by the
+  // ring); the rAF loop steps aside until it ends.
+  if (netActive) {
+    requestAnimationFrame(frame);
     return;
   }
 
@@ -425,40 +603,17 @@ function frame(): void {
     return;
   }
 
+  // Solo (offline) loop: advance the flow, step the sim, render.
   const stepNow = flow.tick(world);
   if (stepNow) {
     const joyTable = [input.joyByte(), 0, 0, 0]; // player 0 is the camera; drones filled by step()
     const dronesActive = world.playerAndDroneCount > world.machinesOnline ? 1 : 0;
     step(world, joyTable, dronesActive);
   }
-  const p = world.players[0]!;
-
-  if (flow.phase === 'gameover') {
-    drawGameOver();
-  } else if (flow.phase === 'preview' || mapMode) {
-    // The 2D map is drawn inside the game view window (draw2d.c), with the HUD
-    // around it — not full-screen. Preview also shows the map.
-    drawDashboard();
-    drawMap2D(ctx!, world);
-    drawHappyIndicator(ctx!, world, 0);
-    drawScoreboard(ctx!, world);
-  } else {
-    drawDashboard();
-    if (p.ply_lives > 0) {
-      drawView3D(ctx!, world, p.ply_y, p.ply_x, p.ply_dir, 0);
-      if (p.ply_reload === 0) drawCrosshair(ctx!, 0);
-      if (p.ply_hitflag) {
-        ctx!.fillStyle = 'rgba(255,0,0,0.45)';
-        ctx!.fillRect(VIEW_SCREEN_X, VIEW_SCREEN_Y, VIEW_WIDTH, 100);
-      }
-    } else {
-      drawDeadView();
-    }
-    drawHappyIndicator(ctx!, world, 0);
-    drawScoreboard(ctx!, world);
-  }
+  renderWorld();
 
   if (status && !hintActive) {
+    const p = world.players[0]!;
     if (flow.phase === 'preview') {
       status.textContent = `get ready — ${Math.ceil(flow.timer / 60)}s`;
     } else if (flow.phase === 'gameover') {

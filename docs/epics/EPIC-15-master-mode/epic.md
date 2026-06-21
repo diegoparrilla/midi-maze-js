@@ -2,7 +2,7 @@
 id: EPIC-15
 iteration: 4
 title: Browser master mode
-status: todo
+status: done
 ---
 
 ## Goal
@@ -13,7 +13,17 @@ handshake (menus / maze-select / name / COUNT-PLAYERS → SEND-DATA → START-GA
 
 ## Stories
 
-Authored at the start of iteration 4 (just-in-time, per ITERATIONS.md).
+- STORY-01: Lobby role & connection — a Solo / Host / Join selector plus server URL +
+  room fields (shown for Host/Join), GEM-styled; a small `NetConfig` model
+  (mode/url/room), unit-tested. Solo keeps the current offline path.
+- STORY-02: Session connect + setup — on Start, open the `Transport`, wire a
+  `ByteChannel`, run `runSetup` with the chosen role, and build the world from the
+  result; surface connecting / waiting / error states and freeze membership at START
+  (C-04). A DOM-free `connectSession(net, config)` → `{ transport, channel, setup }`.
+- STORY-03: Networked game loop — drive `NetGame` in the app loop (async lock-step
+  ticks, rendered via the existing renderer), integrated with `GameFlow`
+  (lobby → connecting → preview → networked play → game over → disconnect → lobby);
+  local quit injects `TERMINATE_GAME`; clean teardown on end/drop.
 
 ## Notes
 
