@@ -60,9 +60,15 @@ the wire-faithful protocol; a browser can be master or slave.
 **Verify:** two browser tabs/phones play a full game via `orchestrator.py --ws`;
 each appears on the orchestrator status ring.
 
+Note: **EPIC-20 (Menus & dialogs) is pulled forward into this iteration** — the host
+lobby (maze select, prefs, teams, names) produces the `MIDI_SEND_DATA` payload that
+EPIC-13 sends and EPIC-15 drives, so it is a prerequisite for master mode rather than
+late polish. (EPIC numbers are global, so the out-of-order number here is expected.)
+
 | Epic | Goal |
 | --- | --- |
 | EPIC-12 · WebSocket transport client | Binary-frame byte pipe to the orchestrator; room join via `Authorization: Bearer`; reconnect. |
+| EPIC-20 · Menus & dialogs | Lobby/config: prefs (reload/regen/revive, drones), teams, name entry, maze select — produces the `MIDI_SEND_DATA` payload and the master lobby. |
 | EPIC-13 · Protocol: election, count, seed, send-data | Master election (`0x00`; reply→master), player count (`0x80`), and the `MIDI_SEND_DATA` (0x83) block (names, maze grid, timings, teams, RNG seed). |
 | EPIC-14 · Per-tick ring loop & lock-step pump | The `maingame.c` send/receive ring loop over the async transport; control bytes (`0x81–0x86`). |
 | EPIC-15 · Browser master mode | Menus/maze-select/start driving the ring as master; slave follows. |
@@ -84,14 +90,14 @@ and respawns stay in sync over the talk's duration.
 
 ## Iteration 6 — Presentation polish
 
-**Goal:** presentation-ready — menus, sound, end screens, robustness.
+**Goal:** presentation-ready — sound, end screens, robustness. (Menus moved to
+iteration 4; see EPIC-20.)
 
 **Verify:** a full session (lobby → multiple rounds → results) runs unattended on
 phones in a room during a dry run of the talk.
 
 | Epic | Goal |
 | --- | --- |
-| EPIC-20 · Menus & dialogs | Prefs (reload/regen/revive, drones), teams, name entry, maze select. |
 | EPIC-21 · Sound | Shot/hit sounds — synthesised per `sound.c` (YM2149) via WebAudio, or recreated SFX (not in the `.D8A`). |
 | EPIC-22 · Popchart, noteboard & end animations | Kill chart, score noteboard, win/lose tongue/blink animations. |
 | EPIC-23 · Presentation hardening | Multiple rooms, reconnect mid-game, performance on low-end phones. |

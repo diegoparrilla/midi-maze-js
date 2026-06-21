@@ -1,6 +1,6 @@
 ---
 id: EPIC-20
-iteration: 6
+iteration: 4
 title: Menus & dialogs
 status: todo
 ---
@@ -8,10 +8,12 @@ status: todo
 ## Goal
 
 Prefs (reload/regen/revive, drones), teams, name entry, maze select (prefdlg.c, master.c).
+Pulled into iteration 4: the host lobby produces the `MIDI_SEND_DATA` payload (names,
+maze, timings, teams, seed) and drives master mode, so it precedes EPIC-13/15.
 
 ## Stories
 
-Authored at the start of iteration 6 (just-in-time, per ITERATIONS.md).
+Authored just-in-time within iteration 4 (per ITERATIONS.md).
 
 ## Notes
 
