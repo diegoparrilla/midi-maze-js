@@ -294,16 +294,50 @@ let droneNeeds2GoSouth = false;
 let droneNeeds2GoEast = false;
 let droneNeeds2GoWest = false;
 
-/** drone_check_directions: which of the 4 neighbouring cells are open. */
+interface Dirs {
+  n: boolean;
+  s: boolean;
+  e: boolean;
+  w: boolean;
+}
+
+/**
+ * drone_check_directions: which of the 4 neighbouring cells are open. The ninja
+ * planner also calls it with explicit field coords (useAltCoord), so this returns
+ * the flags; callers either store them locally or copy them into the module flags.
+ */
+function droneCheckDirsAt(
+  world: World,
+  player: number,
+  useAltCoord: boolean,
+  altYField: number,
+  altXField: number,
+): Dirs {
+  let yField: number;
+  let xField: number;
+  if (!useAltCoord) {
+    const p = world.players[player]!;
+    yField = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+    xField = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  } else {
+    yField = altYField;
+    xField = altXField;
+  }
+  return {
+    n: world.getMazeData(yField - 1, xField) === MAZE_FIELD_EMPTY,
+    s: world.getMazeData(yField + 1, xField) === MAZE_FIELD_EMPTY,
+    w: world.getMazeData(yField, xField - 1) === MAZE_FIELD_EMPTY,
+    e: world.getMazeData(yField, xField + 1) === MAZE_FIELD_EMPTY,
+  };
+}
+
+/** drone_check_directions writing the module-level can-go flags (player coords). */
 function droneCheckDirections(world: World, player: number): void {
-  const p = world.players[player]!;
-  const yField = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
-  const xField = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
-  droneCanNorth = droneCanSouth = droneCanEast = droneCanWest = false;
-  if (world.getMazeData(yField - 1, xField) === MAZE_FIELD_EMPTY) droneCanNorth = true;
-  if (world.getMazeData(yField + 1, xField) === MAZE_FIELD_EMPTY) droneCanSouth = true;
-  if (world.getMazeData(yField, xField - 1) === MAZE_FIELD_EMPTY) droneCanWest = true;
-  if (world.getMazeData(yField, xField + 1) === MAZE_FIELD_EMPTY) droneCanEast = true;
+  const d = droneCheckDirsAt(world, player, false, 0, 0);
+  droneCanNorth = d.n;
+  droneCanSouth = d.s;
+  droneCanEast = d.e;
+  droneCanWest = d.w;
 }
 
 /** drone_delta_into_direction: angle (0..255, 0 = north) towards a deltaY/deltaX. */
@@ -344,14 +378,16 @@ function droneAim2target(world: World, player: number): boolean {
 }
 
 // drone_isTargetIsVisible{North,South,East,West}: line-of-sight along an axis.
-function droneVisibleNorth(world: World, player: number): boolean {
+// fieldY/fieldX override the player's own field (the ninja planner scans from
+// hypothetical positions); 0 means "use the player's current field".
+function droneVisibleNorth(world: World, player: number, fieldY = 0, fieldX = 0): boolean {
   const p = world.players[player]!;
   const t = droneTarget(world, p);
   if (t.ply_lives <= 0) return false;
   const targetFieldY = (t.ply_y >> MAZE_FIELD_SHIFT) | 1;
   const targetFieldX = (t.ply_x >> MAZE_FIELD_SHIFT) | 1;
-  let playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
-  const playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  let playerFieldY = fieldY ? fieldY : (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  const playerFieldX = fieldX ? fieldX : (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
   if (targetFieldX !== playerFieldX || playerFieldY < targetFieldY) return false;
   if (playerFieldY <= 1) return false;
   if (targetFieldX === playerFieldX && targetFieldY === playerFieldY) return true;
@@ -365,14 +401,14 @@ function droneVisibleNorth(world: World, player: number): boolean {
   return targetFieldY === playerFieldY;
 }
 
-function droneVisibleSouth(world: World, player: number): boolean {
+function droneVisibleSouth(world: World, player: number, fieldY = 0, fieldX = 0): boolean {
   const p = world.players[player]!;
   const t = droneTarget(world, p);
   if (t.ply_lives <= 0) return false;
   const targetFieldY = (t.ply_y >> MAZE_FIELD_SHIFT) | 1;
   const targetFieldX = (t.ply_x >> MAZE_FIELD_SHIFT) | 1;
-  let playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
-  const playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  let playerFieldY = fieldY ? fieldY : (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  const playerFieldX = fieldX ? fieldX : (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
   if (targetFieldX !== playerFieldX || playerFieldY > targetFieldY) return false;
   if (playerFieldY > MAZE_MAX_SIZE - 1) return false;
   if (targetFieldX === playerFieldX && targetFieldY === playerFieldY) return true;
@@ -386,14 +422,14 @@ function droneVisibleSouth(world: World, player: number): boolean {
   return targetFieldY === playerFieldY;
 }
 
-function droneVisibleEast(world: World, player: number): boolean {
+function droneVisibleEast(world: World, player: number, fieldY = 0, fieldX = 0): boolean {
   const p = world.players[player]!;
   const t = droneTarget(world, p);
   if (t.ply_lives <= 0) return false;
   const targetFieldX = (t.ply_x >> MAZE_FIELD_SHIFT) | 1;
   const targetFieldY = (t.ply_y >> MAZE_FIELD_SHIFT) | 1;
-  const playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
-  let playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  const playerFieldY = fieldY ? fieldY : (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  let playerFieldX = fieldX ? fieldX : (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
   if (targetFieldY !== playerFieldY || targetFieldX < playerFieldX) return false;
   if (playerFieldX > MAZE_MAX_SIZE - 1) return false;
   if (targetFieldX === playerFieldX && targetFieldY === playerFieldY) return true;
@@ -407,14 +443,14 @@ function droneVisibleEast(world: World, player: number): boolean {
   return targetFieldX === playerFieldX;
 }
 
-function droneVisibleWest(world: World, player: number): boolean {
+function droneVisibleWest(world: World, player: number, fieldY = 0, fieldX = 0): boolean {
   const p = world.players[player]!;
   const t = droneTarget(world, p);
   if (t.ply_lives <= 0) return false;
   const targetFieldX = (t.ply_x >> MAZE_FIELD_SHIFT) | 1;
   const targetFieldY = (t.ply_y >> MAZE_FIELD_SHIFT) | 1;
-  const playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
-  let playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  const playerFieldY = fieldY ? fieldY : (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  let playerFieldX = fieldX ? fieldX : (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
   if (targetFieldY !== playerFieldY || playerFieldX < targetFieldX) return false;
   if (playerFieldX <= 1) return false;
   if (targetFieldX === playerFieldX && targetFieldY === playerFieldY) return true;
@@ -779,13 +815,3590 @@ function droneSubStandard(world: World, player: number): void {
   }
 }
 
+// The ninja plan encodes "north" as PLAYER_DIR_NORTH + 256 in dr_dir[], so that a
+// non-zero dr_dir[0] means "a plan exists" (PLAYER_DIR_NORTH itself is 0).
+const NINJA_PLAN_NORTH = PLAYER_DIR_NORTH + 256;
+
+/**
+ * Faithful to drone.c's `if(a()){} else if(b()){} ...` planner chains: try each in
+ * order and stop at the first that returns true. Each attempt has side effects
+ * (it may write the drone's plan), and the RNG inside an attempt is only consumed
+ * when that attempt is reached — matching the original's short-circuit order.
+ */
+function tryPlans(...attempts: Array<() => boolean>): void {
+  for (const a of attempts) if (a()) return;
+}
+
+/**
+ * drone_sub_ninja: the ninja's per-tick brain. If it has no plan, search the four
+ * axes for the target (aim+lock when visible) or build a route around walls via
+ * the planners. If it has a plan, advance/execute it (with a 78-step timeout).
+ */
+function droneSubNinja(world: World, player: number): void {
+  const p = world.players[player]!;
+  droneNeeds2GoNorth = droneNeeds2GoSouth = droneNeeds2GoEast = droneNeeds2GoWest = false;
+  const t = droneTarget(world, p);
+  const playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  const playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  const targetFieldY = (t.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  const targetFieldX = (t.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  const deltaY = targetFieldY - playerFieldY;
+  const deltaX = targetFieldX - playerFieldX;
+
+  droneCheckDirections(world, player);
+
+  const seek = (visible: boolean) => {
+    if (visible) {
+      if (droneAim2target(world, player)) p.dr_targetLocked = 1;
+      else if (p.dr_targetLocked) droneSubFindMoveToTarget(world, player);
+    } else if (p.dr_targetLocked) droneSubFindMoveToTarget(world, player);
+  };
+
+  if (deltaY === 0 && !p.dr_dir[0]) {
+    if (deltaX < 0) {
+      if (droneCanWest) {
+        droneNeeds2GoWest = true;
+        seek(droneVisibleWest(world, player));
+      } else {
+        tryPlans(
+          () => droneSubNinjaPlan(world, player, 'w'),
+          () => (world.rng.rnd(256) & 1) !== 0 && droneSubNinjaNorth(world, player, 'w'),
+          () => droneSubNinjaNorth(world, player, 'e'),
+          () => droneSubNinjaNorth(world, player, 'w'),
+          () => droneSubNinjaSouth(world, player, 'w'),
+          () => droneSubNinjaEast(world, player, 'n'),
+          () => droneSubNinjaEast(world, player, 's'),
+        );
+      }
+    } else if (deltaX > 0) {
+      if (droneCanEast) {
+        droneNeeds2GoEast = true;
+        seek(droneVisibleEast(world, player));
+      } else {
+        tryPlans(
+          () => droneSubNinjaPlan(world, player, 'e'),
+          () => (world.rng.rnd(256) & 1) !== 0 && droneSubNinjaNorth(world, player, 'e'),
+          () => droneSubNinjaNorth(world, player, 'w'),
+          () => droneSubNinjaNorth(world, player, 'e'),
+          () => droneSubNinjaSouth(world, player, 'e'),
+          () => droneSubNinjaWest(world, player, 'n'),
+          () => droneSubNinjaWest(world, player, 's'),
+        );
+      }
+    }
+  } else if (deltaX === 0 && !p.dr_dir[0]) {
+    if (deltaY < 0) {
+      if (droneCanNorth) {
+        droneNeeds2GoNorth = true;
+        seek(droneVisibleNorth(world, player));
+      } else {
+        tryPlans(
+          () => droneSubNinjaPlan(world, player, 'n'),
+          () => (world.rng.rnd(256) & 1) !== 0 && droneSubNinjaWest(world, player, 's'),
+          () => droneSubNinjaWest(world, player, 'n'),
+          () => droneSubNinjaWest(world, player, 's'),
+          () => droneSubNinjaEast(world, player, 'n'),
+          () => droneSubNinjaSouth(world, player, 'e'),
+          () => droneSubNinjaSouth(world, player, 'w'),
+        );
+      }
+    } else if (deltaY > 0) {
+      if (droneCanSouth) {
+        droneNeeds2GoSouth = true;
+        seek(droneVisibleSouth(world, player));
+      } else {
+        tryPlans(
+          () => droneSubNinjaPlan(world, player, 's'),
+          () => (world.rng.rnd(256) & 1) !== 0 && droneSubNinjaEast(world, player, 'n'),
+          () => droneSubNinjaEast(world, player, 's'),
+          () => droneSubNinjaEast(world, player, 'n'),
+          () => droneSubNinjaWest(world, player, 's'),
+          () => droneSubNinjaNorth(world, player, 'e'),
+          () => droneSubNinjaNorth(world, player, 'w'),
+        );
+      }
+    }
+  } else if (deltaY < 0 && !p.dr_dir[0]) {
+    if (p.dr_targetLocked) {
+      droneSubFindMoveToTarget(world, player);
+    } else if (droneCanNorth) {
+      droneNeeds2GoNorth = true;
+    } else if (deltaX < 0 && droneCanWest) {
+      droneNeeds2GoWest = true;
+    } else if (deltaX > 0 && droneCanEast) {
+      droneNeeds2GoEast = true;
+    } else if (!droneCanNorth && deltaX > 0 && !droneCanEast) {
+      tryPlans(
+        () => (world.rng.rnd(256) & 1) !== 0 && droneSubNinjaWest(world, player, 's'),
+        () => droneSubNinjaWest(world, player, 'n'),
+        () => droneSubNinjaWest(world, player, 's'),
+        () => droneSubNinjaSouth(world, player, 'e'),
+        () => droneSubNinjaSouth(world, player, 'w'),
+      );
+    } else if (!droneCanNorth && deltaX < 0 && !droneCanWest) {
+      tryPlans(
+        () => (world.rng.rnd(256) & 1) !== 0 && droneSubNinjaEast(world, player, 's'),
+        () => droneSubNinjaEast(world, player, 'n'),
+        () => droneSubNinjaEast(world, player, 's'),
+        () => droneSubNinjaSouth(world, player, 'w'),
+        () => droneSubNinjaSouth(world, player, 'e'),
+      );
+    }
+  } else if (deltaY > 0 && !p.dr_dir[0]) {
+    if (p.dr_targetLocked) {
+      droneSubFindMoveToTarget(world, player);
+    } else if (droneCanSouth) {
+      droneNeeds2GoSouth = true;
+    } else if (deltaX < 0 && droneCanWest) {
+      droneNeeds2GoWest = true;
+    } else if (deltaX > 0 && droneCanEast) {
+      droneNeeds2GoEast = true;
+    } else if (!droneCanSouth && deltaX < 0 && !droneCanWest) {
+      tryPlans(
+        () => (world.rng.rnd(256) & 1) !== 0 && droneSubNinjaEast(world, player, 'n'),
+        () => droneSubNinjaEast(world, player, 's'),
+        () => droneSubNinjaEast(world, player, 'n'),
+        () => droneSubNinjaNorth(world, player, 'e'),
+        () => droneSubNinjaNorth(world, player, 'w'),
+      );
+    } else if (!droneCanSouth && deltaX > 0 && !droneCanEast) {
+      tryPlans(
+        () => (world.rng.rnd(256) & 1) !== 0 && droneSubNinjaWest(world, player, 'n'),
+        () => droneSubNinjaWest(world, player, 's'),
+        () => droneSubNinjaWest(world, player, 'n'),
+        () => droneSubNinjaNorth(world, player, 'w'),
+        () => droneSubNinjaNorth(world, player, 'e'),
+      );
+    }
+  }
+
+  // Does the drone have a plan? Execute it.
+  if (p.dr_dir[0]) {
+    let fieldIndex = p.dr_fieldIndex;
+    // reached the destination field? advance to the next plan step.
+    if (p.dr_field[fieldIndex]!.y === playerFieldY && p.dr_field[fieldIndex]!.x === playerFieldX) {
+      p.dr_fieldIndex++;
+      fieldIndex = p.dr_fieldIndex;
+      p.dr_fieldResetTimer = 0;
+    }
+    // after 78 steps, time out and give up on the plan.
+    if (p.dr_fieldResetTimer++ > 78) {
+      p.dr_field[fieldIndex]!.y = 0;
+      p.dr_fieldResetTimer = 0;
+    }
+
+    if (p.dr_field[fieldIndex]!.y === 0 || p.dr_dir[fieldIndex] === -1) {
+      p.dr_dir[0] = 0;
+      p.dr_fieldIndex = 0;
+      p.dr_upRotationCounter = 0;
+      p.dr_rotateCounter = 0;
+      // take the last plan step's direction as our intended move.
+      if (fieldIndex > 0) {
+        if (p.dr_dir[fieldIndex - 1] === NINJA_PLAN_NORTH) droneNeeds2GoNorth = true;
+        else if (p.dr_dir[fieldIndex - 1] === PLAYER_DIR_EAST) droneNeeds2GoEast = true;
+        else if (p.dr_dir[fieldIndex - 1] === PLAYER_DIR_SOUTH) droneNeeds2GoSouth = true;
+        else if (p.dr_dir[fieldIndex - 1] === PLAYER_DIR_WEST) droneNeeds2GoWest = true;
+      }
+      // else: drone.c has a dead #if-0 block here (fieldIndex-1 == -1); no-op.
+    } else if (p.dr_dir[fieldIndex] === NINJA_PLAN_NORTH && droneCanNorth) {
+      if (fieldIndex === 0 && p.ply_dir) droneSetPosition(world, player, 'n');
+      droneNeeds2GoNorth = true;
+      if (deltaX === 0 && deltaY < 0) {
+        if (droneVisibleNorth(world, player)) {
+          if (droneAim2target(world, player)) {
+            p.dr_targetLocked = 1;
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            p.dr_upRotationCounter = 0;
+            p.dr_rotateCounter = 0;
+          } else if (p.dr_targetLocked) droneSubFindMoveToTarget(world, player);
+        } else if (p.dr_targetLocked) droneSubFindMoveToTarget(world, player);
+      }
+    } else if (p.dr_dir[fieldIndex] === PLAYER_DIR_EAST && droneCanEast) {
+      if (fieldIndex === 0 && p.ply_dir !== PLAYER_DIR_EAST) droneSetPosition(world, player, 'e');
+      droneNeeds2GoEast = true;
+      if (deltaY === 0 && deltaX > 0) {
+        if (droneVisibleEast(world, player)) {
+          if (droneAim2target(world, player)) {
+            p.dr_targetLocked = 1;
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            p.dr_upRotationCounter = 0;
+            p.dr_rotateCounter = 0;
+          } else if (p.dr_targetLocked) droneSubFindMoveToTarget(world, player);
+        } else if (p.dr_targetLocked) droneSubFindMoveToTarget(world, player);
+      }
+    } else if (p.dr_dir[fieldIndex] === PLAYER_DIR_SOUTH && droneCanSouth) {
+      if (p.ply_dir !== PLAYER_DIR_SOUTH && fieldIndex === 0) droneSetPosition(world, player, 's');
+      droneNeeds2GoSouth = true;
+      if (deltaX === 0 && deltaY > 0) {
+        if (droneVisibleSouth(world, player)) {
+          if (droneAim2target(world, player)) {
+            p.dr_targetLocked = 1;
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            p.dr_upRotationCounter = 0;
+            p.dr_rotateCounter = 0;
+          } else if (p.dr_targetLocked) droneSubFindMoveToTarget(world, player);
+        } else if (p.dr_targetLocked) droneSubFindMoveToTarget(world, player);
+      }
+    } else if (p.dr_dir[fieldIndex] === PLAYER_DIR_WEST && droneCanWest) {
+      if (p.ply_dir !== PLAYER_DIR_WEST && fieldIndex === 0) droneSetPosition(world, player, 'w');
+      droneNeeds2GoWest = true;
+      if (deltaY === 0 && deltaX < 0) {
+        if (droneVisibleWest(world, player)) {
+          if (droneAim2target(world, player)) {
+            p.dr_targetLocked = 1;
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            p.dr_upRotationCounter = 0;
+            p.dr_rotateCounter = 0;
+          } else if (p.dr_targetLocked) droneSubFindMoveToTarget(world, player);
+        } else if (p.dr_targetLocked) droneSubFindMoveToTarget(world, player);
+      }
+    }
+  }
+
+  // collapse the needs2go intent into the can-go flags for joystick generation.
+  if (droneNeeds2GoNorth) {
+    droneCanSouth = droneCanEast = droneCanWest = false;
+    droneCanNorth = true;
+  } else if (droneNeeds2GoSouth) {
+    droneCanNorth = droneCanEast = droneCanWest = false;
+    droneCanSouth = true;
+  } else if (droneNeeds2GoEast) {
+    droneCanNorth = droneCanSouth = droneCanWest = false;
+    droneCanEast = true;
+  } else if (droneNeeds2GoWest) {
+    droneCanNorth = droneCanSouth = droneCanEast = false;
+    droneCanWest = true;
+  }
+}
+
+// --- Ninja route planners (drone.c, transformed verbatim). Deeply nested
+// do/while scans that build a multi-step dr_dir[]/dr_field[] plan around walls. ---
+function droneSubNinjaPlan(world: World, player: number, wantedDirChar: string): boolean {
+  const p = world.players[player]!;
+  let d: Dirs = { n: false, s: false, e: false, w: false };
+  let target_player = 0;
+  let targetFieldX = 0;
+  let targetFieldY = 0;
+  let playerFieldX = 0;
+  let playerFieldY = 0;
+
+  target_player = p.dr_currentTarget;
+  targetFieldY = (world.players[target_player]!.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  targetFieldX = (world.players[target_player]!.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  p.dr_fieldIndex = 0;
+  p.dr_upRotationCounter = 0;
+  p.dr_rotateCounter = 0;
+  p.dr_dir[0] = 0;
+  p.dr_field[0]!.y = 0;
+  d = droneCheckDirsAt(world, player, false, 0, 0);
+
+  if (wantedDirChar === 'n') {
+    if (d.w) {
+      /* Move West, North (check for target), East (check for target), ... */
+      p.dr_dir[0] = PLAYER_DIR_WEST;
+      do {
+        d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+        if (!d.w) break;
+        playerFieldX -= 2;
+        if (playerFieldX <= 0) break;
+        d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+        if (!d.s && !d.n && !d.w) {
+          /* dead end? */
+          playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1; /* reset player position and exit */
+          break;
+        }
+        if (d.n) {
+          p.dr_field[0]!.y = playerFieldY;
+          p.dr_field[0]!.x = playerFieldX;
+          p.dr_dir[1] = NINJA_PLAN_NORTH;
+          do {
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.n) {
+              playerFieldY = p.dr_field[0]!.y;
+              break;
+            }
+            playerFieldY -= 2;
+            if (playerFieldY <= 0) {
+              playerFieldY = p.dr_field[0]!.y;
+              break;
+            }
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.w && !d.n && !d.e) {
+              /* dead end? */
+              playerFieldY = p.dr_field[0]!.y;
+              break;
+            }
+            if (d.n && droneVisibleNorth(world, player, playerFieldY, playerFieldX)) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              p.dr_field[2]!.y = 0;
+              p.dr_dir[2] = -1;
+              return true;
+            }
+            if (d.e) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              p.dr_field[2]!.y = 0;
+              p.dr_dir[2] = PLAYER_DIR_EAST;
+              p.dr_dir[3] = -1;
+              if (droneVisibleEast(world, player, playerFieldY, playerFieldX)) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX + 2;
+                p.dr_field[3]!.y = 0;
+                return true;
+              }
+              do {
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.e) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                playerFieldX += 2;
+                if (playerFieldX > MAZE_MAX_SIZE - 1) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.n && !d.s && !d.e) {
+                  /* dead end? */
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                if (!d.e && targetFieldY < playerFieldY && !d.n) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                if (!d.e && targetFieldY > playerFieldY && !d.s) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                if (d.n || d.s) {
+                  p.dr_field[2]!.y = playerFieldY;
+                  p.dr_field[2]!.x = playerFieldX;
+                  p.dr_field[3]!.y = 0;
+                  if (targetFieldY < playerFieldY && d.n) {
+                    p.dr_dir[3] = NINJA_PLAN_NORTH;
+                    p.dr_dir[4] = -1;
+                    do {
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (!d.n) {
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      playerFieldY -= 2;
+                      if (playerFieldY <= 0) break;
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (droneVisibleNorth(world, player, playerFieldY, playerFieldX)) {
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (!d.w && !d.n && !d.e) {
+                        /* dead end? */
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      if (targetFieldX < playerFieldX && d.w) {
+                        p.dr_dir[4] = PLAYER_DIR_WEST;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (targetFieldX > playerFieldX && d.e) {
+                        p.dr_dir[4] = PLAYER_DIR_EAST;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                    } while (d.n);
+                  } else if (targetFieldY > playerFieldY && d.s) {
+                    p.dr_dir[3] = PLAYER_DIR_SOUTH;
+                    p.dr_dir[4] = -1;
+                    do {
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (!d.s) {
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      playerFieldY += 2;
+                      if (playerFieldY > MAZE_MAX_SIZE - 1) break;
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (droneVisibleSouth(world, player, playerFieldY, playerFieldX)) {
+                        p.dr_field[4]!.y = playerFieldY;
+                        p.dr_field[4]!.x = playerFieldX;
+                        p.dr_field[5]!.y = 0;
+                        return true;
+                      }
+                      if (!d.e && !d.w && !d.s) {
+                        /* dead end? */
+                        playerFieldY = p.dr_field[2]!.x;
+                        break;
+                      }
+                      if (targetFieldX < playerFieldX && d.w) {
+                        p.dr_dir[4] = PLAYER_DIR_WEST;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (targetFieldX > playerFieldX && d.e) {
+                        p.dr_dir[4] = PLAYER_DIR_EAST;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                    } while (d.s);
+                  }
+                }
+              } while (d.e);
+              p.dr_dir[0] = 0;
+              p.dr_fieldIndex = 0;
+              break;
+            }
+          } while (d.n);
+          p.dr_dir[0] = 0;
+          p.dr_fieldIndex = 0;
+          break;
+        }
+      } while (d.w);
+      p.dr_dir[0] = 0;
+      p.dr_fieldIndex = 0;
+      d = droneCheckDirsAt(world, player, false, 0, 0);
+      playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1; /* reset player position */
+      playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+    }
+    if (d.e) {
+      p.dr_dir[0] = PLAYER_DIR_EAST;
+      do {
+        d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+        if (!d.e) break;
+        playerFieldX += 2;
+        if (playerFieldX > MAZE_MAX_SIZE - 1) break;
+        d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+        if (!d.n && !d.e && !d.s) break; /* dead end? */
+        if (d.n) {
+          p.dr_field[0]!.y = playerFieldY;
+          p.dr_field[0]!.x = playerFieldX;
+          p.dr_dir[1] = NINJA_PLAN_NORTH;
+          do {
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.n) {
+              playerFieldY = p.dr_field[0]!.y;
+              break;
+            }
+            playerFieldY -= 2;
+            if (playerFieldY <= 0) {
+              playerFieldY = p.dr_field[0]!.y;
+              break;
+            }
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.w && !d.n && !d.e) {
+              /* dead end? */
+              playerFieldY = p.dr_field[0]!.y;
+              break;
+            }
+            if (d.n && droneVisibleNorth(world, player, playerFieldY, playerFieldX)) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              p.dr_field[2]!.y = 0;
+              p.dr_dir[2] = -1;
+              return true;
+            }
+            if (d.w) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              p.dr_field[2]!.y = 0;
+              p.dr_dir[2] = PLAYER_DIR_WEST;
+              p.dr_dir[3] = -1;
+              if (droneVisibleWest(world, player, playerFieldY, playerFieldX)) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX - 2;
+                p.dr_field[3]!.y = 0;
+                return true;
+              }
+              do {
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.w) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                playerFieldX -= 2;
+                if (playerFieldX <= 0) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.s && !d.n && !d.w) {
+                  /* dead end? */
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                if (!d.n && targetFieldX < playerFieldX && !d.w) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                if (!d.s && targetFieldX > playerFieldX && !d.w) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                if (d.n || d.s) {
+                  p.dr_field[2]!.y = playerFieldY;
+                  p.dr_field[2]!.x = playerFieldX;
+                  p.dr_field[3]!.y = 0;
+                  if (targetFieldY < playerFieldY && d.n) {
+                    p.dr_dir[3] = NINJA_PLAN_NORTH;
+                    p.dr_dir[4] = -1;
+                    do {
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (!d.n) {
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      playerFieldY -= 2;
+                      if (playerFieldY <= 0) {
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (droneVisibleNorth(world, player, playerFieldY, playerFieldX)) {
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (!d.e && !d.n && !d.w) {
+                        /* dead end? */
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      if (targetFieldX < playerFieldX && d.w) {
+                        p.dr_dir[4] = PLAYER_DIR_WEST;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (targetFieldX > playerFieldX && d.e) {
+                        p.dr_dir[4] = PLAYER_DIR_EAST;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                    } while (d.n);
+                  } else if (targetFieldY > playerFieldY && d.s) {
+                    p.dr_dir[3] = PLAYER_DIR_SOUTH;
+                    p.dr_dir[4] = -1;
+                    do {
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (!d.s) {
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      playerFieldY += 2;
+                      if (playerFieldY > MAZE_MAX_SIZE - 1) {
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (droneVisibleSouth(world, player, playerFieldY, playerFieldX)) {
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (!d.e && !d.w && !d.s) {
+                        /* dead end? */
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      if (targetFieldX < playerFieldX && d.w) {
+                        p.dr_dir[4] = PLAYER_DIR_WEST;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (targetFieldX > playerFieldX && d.e) {
+                        p.dr_dir[4] = PLAYER_DIR_EAST;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                    } while (d.s);
+                  }
+                }
+              } while (d.e);
+              p.dr_dir[0] = 0;
+              p.dr_fieldIndex = 0;
+              break;
+            }
+          } while (d.n);
+          p.dr_dir[0] = 0;
+          p.dr_fieldIndex = 0;
+          return false;
+        }
+      } while (d.w);
+    }
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  if (wantedDirChar === 's') {
+    if (d.w) {
+      p.dr_dir[0] = PLAYER_DIR_WEST;
+      do {
+        d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+        if (!d.w) break;
+        playerFieldX -= 2;
+        if (playerFieldX <= 0) {
+          playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1; /* reset player position and exit */
+          break;
+        }
+        d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+        if (!d.s && !d.n && !d.w) {
+          /* dead end? */
+          playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1; /* reset player position and exit */
+          break;
+        }
+        if (d.s) {
+          p.dr_field[0]!.y = playerFieldY;
+          p.dr_field[0]!.x = playerFieldX;
+          p.dr_dir[1] = PLAYER_DIR_SOUTH;
+          do {
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.s) {
+              playerFieldY = p.dr_field[0]!.y;
+              break;
+            }
+            playerFieldY += 2;
+            if (playerFieldY > MAZE_MAX_SIZE - 1) {
+              playerFieldY = p.dr_field[0]!.y;
+              break;
+            }
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.w && !d.s && !d.e) {
+              /* dead end? */
+              playerFieldY = p.dr_field[0]!.y;
+              break;
+            }
+            if (d.s && droneVisibleSouth(world, player, playerFieldY, playerFieldX)) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              p.dr_field[2]!.y = 0;
+              p.dr_dir[2] = -1;
+              return true;
+            }
+            if (d.e) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              p.dr_field[2]!.y = 0;
+              p.dr_dir[2] = PLAYER_DIR_EAST;
+              p.dr_dir[3] = -1;
+              if (droneVisibleEast(world, player, playerFieldY, playerFieldX)) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX + 2;
+                p.dr_field[3]!.y = 0;
+                return true;
+              }
+              do {
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.e) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                playerFieldX += 2;
+                if (playerFieldX > MAZE_MAX_SIZE - 1) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.n && !d.s && !d.e) {
+                  /* dead end? */
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                if (!d.e && targetFieldY < playerFieldY && !d.n) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                if (!d.e && targetFieldY > playerFieldY && !d.s) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                if (d.n || d.s) {
+                  p.dr_field[2]!.y = playerFieldY;
+                  p.dr_field[2]!.x = playerFieldX;
+                  p.dr_field[3]!.y = 0;
+                  if (targetFieldY < playerFieldY && d.n) {
+                    p.dr_dir[3] = NINJA_PLAN_NORTH;
+                    p.dr_dir[4] = -1;
+                    do {
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (!d.n) {
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      playerFieldY -= 2;
+                      if (playerFieldY < 0) {
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (droneVisibleNorth(world, player, playerFieldY, playerFieldX)) {
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (!d.w && !d.n && !d.e) {
+                        /* dead end? */
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      if (targetFieldX < playerFieldX && d.w) {
+                        p.dr_dir[4] = PLAYER_DIR_WEST;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[4]!.y = 0;
+                      } else {
+                        if (targetFieldX > playerFieldX && d.e) {
+                          p.dr_dir[4] = PLAYER_DIR_EAST;
+                          p.dr_dir[5] = -1;
+                          p.dr_field[3]!.x = playerFieldX;
+                          p.dr_field[3]!.y = playerFieldY;
+                          p.dr_field[4]!.y = 0;
+                          return true;
+                        }
+                      }
+                    } while (d.n);
+                  } else if (targetFieldY > playerFieldY && d.s) {
+                    p.dr_dir[3] = PLAYER_DIR_SOUTH;
+                    p.dr_dir[4] = -1;
+                    do {
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (!d.s) {
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      playerFieldY += 2;
+                      if (playerFieldY > MAZE_MAX_SIZE - 1) {
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (droneVisibleSouth(world, player, playerFieldY, playerFieldX)) {
+                        p.dr_field[4]!.y = playerFieldY;
+                        p.dr_field[4]!.x = playerFieldX;
+                        p.dr_field[5]!.y = 0;
+                        return true;
+                      }
+                      if (!d.e && !d.w && !d.s) {
+                        /* dead end? */
+                        playerFieldY = p.dr_field[2]!.x;
+                        break;
+                      }
+                      if (targetFieldX < playerFieldX && d.w) {
+                        p.dr_dir[4] = PLAYER_DIR_WEST;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (targetFieldX > playerFieldX && d.e) {
+                        p.dr_dir[4] = PLAYER_DIR_EAST;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                    } while (d.s);
+                  }
+                }
+              } while (d.e);
+              p.dr_dir[0] = 0;
+              p.dr_fieldIndex = 0;
+              break;
+            }
+          } while (d.s);
+          p.dr_dir[0] = 0;
+          p.dr_fieldIndex = 0;
+          break;
+        }
+      } while (d.w);
+      p.dr_dir[0] = 0;
+      p.dr_fieldIndex = 0;
+      d = droneCheckDirsAt(world, player, false, 0, 0);
+      playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1; /* reset player position */
+      playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+    }
+    if (d.e) {
+      p.dr_dir[0] = PLAYER_DIR_EAST;
+      do {
+        d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+        if (!d.e) break;
+        playerFieldX += 2;
+        if (playerFieldX > MAZE_MAX_SIZE - 1) break;
+        d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+        if (!d.n && !d.e && !d.s) break; /* dead end? */
+        if (d.s) {
+          p.dr_field[0]!.y = playerFieldY;
+          p.dr_field[0]!.x = playerFieldX;
+          p.dr_dir[1] = PLAYER_DIR_SOUTH;
+          do {
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.s) {
+              playerFieldY = p.dr_field[0]!.y;
+              break;
+            }
+            playerFieldY += 2;
+            if (playerFieldY > MAZE_MAX_SIZE - 1) {
+              playerFieldY = p.dr_field[0]!.y;
+              break;
+            }
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.w && !d.s && !d.e) {
+              /* dead end? */
+              playerFieldY = p.dr_field[0]!.y;
+              break;
+            }
+            if (d.s && droneVisibleSouth(world, player, playerFieldY, playerFieldX)) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              p.dr_field[2]!.y = 0;
+              p.dr_dir[2] = -1;
+              return true;
+            }
+            if (d.w) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              p.dr_field[2]!.y = 0;
+              p.dr_dir[2] = PLAYER_DIR_WEST;
+              p.dr_dir[3] = -1;
+              if (droneVisibleWest(world, player, playerFieldY, playerFieldX)) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX - 2;
+                p.dr_field[3]!.y = 0;
+                return true;
+              }
+              do {
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.w) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                playerFieldX -= 2;
+                if (playerFieldX <= 0) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.s && !d.n && !d.w) {
+                  /* dead end? */
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                if (!d.n && targetFieldX < playerFieldX && !d.w) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                if (!d.s && targetFieldX > playerFieldX && !d.w) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                if (d.n || d.s) {
+                  p.dr_field[2]!.y = playerFieldY;
+                  p.dr_field[2]!.x = playerFieldX;
+                  p.dr_field[3]!.y = 0;
+                  if (targetFieldY < playerFieldY && d.n) {
+                    p.dr_dir[3] = NINJA_PLAN_NORTH;
+                    p.dr_dir[4] = -1;
+                    do {
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (!d.n) {
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      playerFieldY -= 2;
+                      if (playerFieldY <= 0) {
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (droneVisibleNorth(world, player, playerFieldY, playerFieldX)) {
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (!d.e && !d.n && !d.w) {
+                        /* dead end? */
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      if (targetFieldX < playerFieldX && d.w) {
+                        p.dr_dir[4] = PLAYER_DIR_WEST;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (targetFieldX > playerFieldX && d.e) {
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[4]!.y = 0;
+                        p.dr_dir[3] = PLAYER_DIR_EAST;
+                        p.dr_dir[4] = -1;
+                        return true;
+                      }
+                    } while (d.n);
+                  } else if (targetFieldY > playerFieldY && d.s) {
+                    p.dr_dir[3] = PLAYER_DIR_SOUTH;
+                    p.dr_dir[4] = -1;
+                    do {
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (!d.s) {
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      playerFieldY += 2;
+                      if (playerFieldY > MAZE_MAX_SIZE - 1) {
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (droneVisibleSouth(world, player, playerFieldY, playerFieldX)) {
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (!d.e && !d.w && !d.s) {
+                        /* dead end? */
+                        playerFieldY = p.dr_field[2]!.y;
+                        break;
+                      }
+                      if (targetFieldX < playerFieldX && d.w) {
+                        p.dr_dir[4] = PLAYER_DIR_WEST;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (targetFieldX > playerFieldX && d.e) {
+                        p.dr_dir[4] = PLAYER_DIR_EAST;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                    } while (d.s);
+                  }
+                }
+              } while (d.e);
+              p.dr_dir[0] = 0;
+              p.dr_fieldIndex = 0;
+              break;
+            }
+          } while (d.s);
+          p.dr_dir[0] = 0;
+          p.dr_fieldIndex = 0;
+          return false;
+        }
+      } while (d.w);
+    }
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  if (wantedDirChar === 'w') {
+    if (d.s) {
+      p.dr_dir[0] = PLAYER_DIR_SOUTH;
+      do {
+        d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+        if (!d.s) break;
+        playerFieldY += 2;
+        if (playerFieldY > MAZE_MAX_SIZE - 1) {
+          playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+          break;
+        }
+        d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+        if (!d.s && !d.e && !d.w) {
+          /* dead end? */
+          playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+          break;
+        }
+        if (d.w) {
+          p.dr_field[0]!.y = playerFieldY;
+          p.dr_field[0]!.x = playerFieldX;
+          p.dr_dir[1] = PLAYER_DIR_WEST;
+          do {
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.w) {
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            playerFieldX -= 2;
+            if (playerFieldX <= 0) {
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.w && !d.n && !d.s) {
+              /* dead end? */
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            if (d.w && droneVisibleWest(world, player, playerFieldY, playerFieldX)) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              p.dr_field[2]!.y = 0;
+              p.dr_dir[2] = -1;
+              return true;
+            }
+            if (d.n) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              p.dr_field[2]!.y = 0;
+              p.dr_dir[2] = NINJA_PLAN_NORTH;
+              p.dr_dir[3] = -1;
+              if (droneVisibleNorth(world, player, playerFieldY, playerFieldX)) {
+                p.dr_field[2]!.y = playerFieldY - 2;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = 0;
+                return true;
+              }
+              do {
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.n) {
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                playerFieldY -= 2;
+                if (playerFieldY < 0) {
+                  playerFieldY = p.dr_field[0]!.y;
+                  break;
+                }
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.n && !d.w && !d.e) {
+                  /* dead end? */
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                if (!d.n && targetFieldX < playerFieldX && !d.w) {
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                if (!d.n && targetFieldX > playerFieldX && !d.e) {
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                if (d.w || d.e) {
+                  p.dr_field[2]!.y = playerFieldY;
+                  p.dr_field[2]!.x = playerFieldX;
+                  p.dr_field[3]!.y = 0;
+                  if (targetFieldX < playerFieldX && d.w) {
+                    p.dr_dir[3] = PLAYER_DIR_WEST;
+                    p.dr_dir[4] = -1;
+                    do {
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (!d.w) {
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      playerFieldX -= 2;
+                      if (playerFieldX <= 0) {
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (droneVisibleWest(world, player, playerFieldY, playerFieldX)) {
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (!d.w && !d.n && !d.s) {
+                        /* dead end? */
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      if (targetFieldY < playerFieldY && d.n) {
+                        p.dr_dir[4] = NINJA_PLAN_NORTH;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (targetFieldY > playerFieldY && d.s) {
+                        p.dr_dir[4] = PLAYER_DIR_SOUTH;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                    } while (d.w);
+                  } else if (targetFieldX > playerFieldX && d.e) {
+                    p.dr_dir[3] = PLAYER_DIR_EAST;
+                    p.dr_dir[4] = -1;
+                    do {
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (!d.e) {
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      playerFieldX += 2;
+                      if (playerFieldX > MAZE_MAX_SIZE - 1) {
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (droneVisibleEast(world, player, playerFieldY, playerFieldX)) {
+                        p.dr_field[4]!.y = playerFieldY;
+                        p.dr_field[4]!.x = playerFieldX;
+                        p.dr_field[5]!.y = 0;
+                        return true;
+                      }
+                      if (!d.e && !d.n && !d.s) {
+                        /* dead end? */
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      if (targetFieldY < playerFieldY && d.n) {
+                        p.dr_dir[4] = NINJA_PLAN_NORTH;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (targetFieldY > playerFieldY && d.s) {
+                        p.dr_dir[4] = PLAYER_DIR_SOUTH;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                    } while (d.e);
+                  }
+                }
+              } while (d.n);
+              p.dr_dir[0] = 0;
+              p.dr_fieldIndex = 0;
+              break;
+            }
+          } while (d.w);
+          p.dr_dir[0] = 0;
+          p.dr_fieldIndex = 0;
+          break;
+        }
+      } while (d.s);
+      p.dr_dir[0] = 0;
+      p.dr_fieldIndex = 0;
+      d = droneCheckDirsAt(world, player, false, 0, 0);
+      playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1; /* reset player position */
+      playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+    }
+    if (d.n) {
+      p.dr_dir[0] = NINJA_PLAN_NORTH;
+      do {
+        d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+        if (!d.n) break;
+        playerFieldY -= 2;
+        if (playerFieldY < 0) break;
+        d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+        if (!d.n && !d.e && !d.w) break; /* dead end? */
+        if (d.w) {
+          p.dr_field[0]!.y = playerFieldY;
+          p.dr_field[0]!.x = playerFieldX;
+          p.dr_dir[1] = PLAYER_DIR_WEST;
+          p.dr_dir[2] = -1;
+          do {
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.w) {
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            playerFieldX -= 2;
+            if (playerFieldX <= 0) {
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.w && !d.n && !d.s) {
+              /* dead end? */
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            if (d.w && droneVisibleWest(world, player, playerFieldY, playerFieldX)) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              p.dr_field[2]!.y = 0;
+              p.dr_dir[2] = -1;
+              return true;
+            }
+            if (d.s) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              p.dr_field[2]!.y = 0;
+              p.dr_dir[2] = PLAYER_DIR_SOUTH;
+              p.dr_dir[3] = -1;
+              if (droneVisibleSouth(world, player, playerFieldY, playerFieldX)) {
+                p.dr_field[2]!.y = playerFieldY + 2;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = 0;
+                return true;
+              }
+              do {
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.s) {
+                  playerFieldY = p.dr_field[0]!.y;
+                  break;
+                }
+                playerFieldY += 2;
+                if (playerFieldY > MAZE_MAX_SIZE - 1) {
+                  playerFieldY = p.dr_field[0]!.y;
+                  break;
+                }
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.s && !d.e && !d.w) {
+                  /* dead end? */
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                if (!d.s && targetFieldX < playerFieldX && !d.w) {
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                if (!d.s && targetFieldX > playerFieldX && !d.e) {
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                if (d.w || d.e) {
+                  p.dr_field[2]!.y = playerFieldY;
+                  p.dr_field[2]!.x = playerFieldX;
+                  p.dr_field[3]!.y = 0;
+                  if (targetFieldX < playerFieldX && d.w) {
+                    p.dr_dir[3] = PLAYER_DIR_WEST;
+                    p.dr_dir[4] = -1;
+                    do {
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (!d.w) {
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      playerFieldX -= 2;
+                      if (playerFieldX <= 0) {
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (droneVisibleWest(world, player, playerFieldY, playerFieldX)) {
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (!d.w && !d.n && !d.s) {
+                        /* dead end? */
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      if (targetFieldY < playerFieldY && d.n) {
+                        p.dr_dir[4] = NINJA_PLAN_NORTH;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (targetFieldY > playerFieldY && d.s) {
+                        p.dr_dir[4] = PLAYER_DIR_SOUTH;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                    } while (d.w);
+                  } else if (targetFieldX > playerFieldX && d.e) {
+                    p.dr_dir[3] = PLAYER_DIR_EAST;
+                    p.dr_dir[4] = -1;
+                    do {
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (!d.e) {
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      playerFieldX += 2;
+                      if (playerFieldX > MAZE_MAX_SIZE - 1) {
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (droneVisibleEast(world, player, playerFieldY, playerFieldX)) {
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (!d.e && !d.n && !d.s) {
+                        /* dead end? */
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      if (targetFieldY < playerFieldY && d.n) {
+                        p.dr_dir[4] = NINJA_PLAN_NORTH;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (targetFieldY > playerFieldY && d.s) {
+                        p.dr_dir[4] = PLAYER_DIR_SOUTH;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                    } while (d.e);
+                  }
+                }
+              } while (d.s);
+              p.dr_dir[0] = 0;
+              p.dr_fieldIndex = 0;
+              break;
+            }
+          } while (d.w);
+          p.dr_dir[0] = 0;
+          p.dr_fieldIndex = 0;
+          return false;
+        }
+      } while (d.n);
+    }
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  if (wantedDirChar === 'e') {
+    if (d.s) {
+      p.dr_dir[0] = PLAYER_DIR_SOUTH;
+      p.dr_dir[1] = -1;
+      do {
+        d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+        if (!d.s) break;
+        playerFieldY += 2;
+        if (playerFieldY > MAZE_MAX_SIZE - 1) {
+          playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+          break;
+        }
+        d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+        if (!d.s && !d.e && !d.w) {
+          /* dead end? */
+          playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+          break;
+        }
+        if (d.e) {
+          p.dr_field[0]!.y = playerFieldY;
+          p.dr_field[0]!.x = playerFieldX;
+          p.dr_dir[1] = PLAYER_DIR_EAST;
+          p.dr_dir[2] = -1;
+          do {
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.e) {
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            playerFieldX += 2;
+            if (playerFieldX > MAZE_MAX_SIZE - 1) {
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.e && !d.n && !d.s) {
+              /* dead end? */
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            if (d.e && droneVisibleEast(world, player, playerFieldY, playerFieldX)) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              p.dr_field[2]!.y = 0;
+              p.dr_dir[2] = -1;
+              return true;
+            }
+            if (d.n) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              p.dr_field[2]!.y = 0;
+              p.dr_dir[2] = NINJA_PLAN_NORTH;
+              p.dr_dir[3] = -1;
+              if (droneVisibleNorth(world, player, playerFieldY, playerFieldX)) {
+                p.dr_field[2]!.y = playerFieldY - 2;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = 0;
+                return true;
+              }
+              do {
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.n) {
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                playerFieldY -= 2;
+                if (playerFieldY < 0) {
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.n && !d.w && !d.e) {
+                  /* dead end? */
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                if (!d.n && targetFieldX < playerFieldX && !d.w) {
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                if (!d.n && targetFieldX > playerFieldX && !d.e) {
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                if (d.w || d.e) {
+                  p.dr_field[2]!.y = playerFieldY;
+                  p.dr_field[2]!.x = playerFieldX;
+                  p.dr_field[3]!.y = 0;
+                  if (targetFieldX < playerFieldX && d.w) {
+                    p.dr_dir[3] = PLAYER_DIR_WEST;
+                    p.dr_dir[4] = -1;
+                    do {
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (!d.w) {
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      playerFieldX -= 2;
+                      if (playerFieldX <= 0) {
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (droneVisibleWest(world, player, playerFieldY, playerFieldX)) {
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (!d.w && !d.n && !d.s) {
+                        /* dead end? */
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      if (targetFieldY < playerFieldY && d.n) {
+                        p.dr_dir[4] = NINJA_PLAN_NORTH;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (targetFieldY > playerFieldY && d.s) {
+                        p.dr_dir[4] = PLAYER_DIR_SOUTH;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                    } while (d.w);
+                  } else if (targetFieldX > playerFieldX && d.e) {
+                    p.dr_dir[3] = PLAYER_DIR_EAST;
+                    p.dr_dir[4] = -1;
+                    do {
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (!d.e) {
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      playerFieldX += 2;
+                      if (playerFieldX > MAZE_MAX_SIZE - 1) {
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (droneVisibleEast(world, player, playerFieldY, playerFieldX)) {
+                        p.dr_field[4]!.y = playerFieldY;
+                        p.dr_field[4]!.x = playerFieldX;
+                        p.dr_field[5]!.y = 0;
+                        return true;
+                      }
+                      if (!d.e && !d.n && !d.s) {
+                        /* dead end? */
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      if (targetFieldY < playerFieldY && d.n) {
+                        p.dr_dir[4] = NINJA_PLAN_NORTH;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (targetFieldY > playerFieldY && d.s) {
+                        p.dr_dir[4] = PLAYER_DIR_SOUTH;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                    } while (d.e);
+                  }
+                }
+              } while (d.n);
+              p.dr_dir[0] = 0;
+              p.dr_fieldIndex = 0;
+              break;
+            }
+          } while (d.e);
+          p.dr_dir[0] = 0;
+          p.dr_fieldIndex = 0;
+          break;
+        }
+      } while (d.s);
+      p.dr_dir[0] = 0;
+      p.dr_fieldIndex = 0;
+      d = droneCheckDirsAt(world, player, false, 0, 0);
+      playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1; /* reset player position */
+      playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+    }
+    if (d.n) {
+      p.dr_dir[0] = NINJA_PLAN_NORTH;
+      do {
+        d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+        if (!d.n) break;
+        playerFieldY -= 2;
+        if (playerFieldY < 0) break;
+        d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+        if (d.e) {
+          p.dr_field[0]!.y = playerFieldY;
+          p.dr_field[0]!.x = playerFieldX;
+          p.dr_dir[1] = PLAYER_DIR_EAST;
+          do {
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.e) {
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            playerFieldX += 2;
+            if (playerFieldX > MAZE_MAX_SIZE - 1) {
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.e && !d.n && !d.s) {
+              /* dead end? */
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            if (d.e && droneVisibleEast(world, player, playerFieldY, playerFieldX)) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              p.dr_field[2]!.y = 0;
+              p.dr_dir[2] = -1;
+              return true;
+            }
+            if (d.s) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              p.dr_field[2]!.y = 0;
+              p.dr_dir[2] = PLAYER_DIR_SOUTH;
+              p.dr_dir[3] = -1;
+              do {
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.s) {
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                playerFieldY += 2;
+                if (playerFieldY > MAZE_MAX_SIZE - 1) {
+                  playerFieldY = p.dr_field[0]!.y;
+                  break;
+                }
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (d.s && droneVisibleSouth(world, player, playerFieldY, playerFieldX)) {
+                  p.dr_field[2]!.y = playerFieldY + 2;
+                  p.dr_field[2]!.x = playerFieldX;
+                  p.dr_field[3]!.y = 0;
+                  return true;
+                }
+                if (!d.s && !d.e && !d.w) {
+                  /* dead end? */
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                if (!d.s && targetFieldX < playerFieldX && !d.w) {
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                if (!d.s && targetFieldX > playerFieldX && !d.e) {
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                if (d.w || d.e) {
+                  p.dr_field[2]!.y = playerFieldY;
+                  p.dr_field[2]!.x = playerFieldX;
+                  p.dr_field[3]!.y = 0;
+                  if (targetFieldX < playerFieldX && d.w) {
+                    p.dr_dir[3] = PLAYER_DIR_WEST;
+                    p.dr_dir[4] = -1;
+                    do {
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (!d.w) {
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      playerFieldX -= 2;
+                      if (playerFieldX <= 0) {
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (droneVisibleWest(world, player, playerFieldY, playerFieldX)) {
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (!d.w && !d.n && !d.s) {
+                        /* dead end? */
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      if (targetFieldY < playerFieldY && d.n) {
+                        p.dr_dir[4] = NINJA_PLAN_NORTH;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (targetFieldY > playerFieldY && d.s) {
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        p.dr_dir[3] = PLAYER_DIR_SOUTH;
+                        p.dr_dir[4] = -1;
+                        return true;
+                      }
+                    } while (d.w);
+                  } else if (targetFieldX > playerFieldX && d.e) {
+                    p.dr_dir[3] = PLAYER_DIR_EAST;
+                    p.dr_dir[4] = -1;
+                    do {
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (!d.e) {
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      playerFieldX += 2;
+                      if (playerFieldX > MAZE_MAX_SIZE - 1) {
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                      if (droneVisibleEast(world, player, playerFieldY, playerFieldX)) {
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (!d.e && !d.n && !d.s) {
+                        /* dead end? */
+                        playerFieldX = p.dr_field[2]!.x;
+                        break;
+                      }
+                      if (targetFieldY < playerFieldY && d.n) {
+                        p.dr_dir[4] = NINJA_PLAN_NORTH;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                      if (targetFieldY > playerFieldY && d.s) {
+                        p.dr_dir[4] = PLAYER_DIR_SOUTH;
+                        p.dr_dir[5] = -1;
+                        p.dr_field[3]!.y = playerFieldY;
+                        p.dr_field[3]!.x = playerFieldX;
+                        p.dr_field[4]!.y = 0;
+                        return true;
+                      }
+                    } while (d.e);
+                  }
+                }
+              } while (d.s);
+              p.dr_dir[0] = 0;
+              p.dr_fieldIndex = 0;
+              break;
+            }
+          } while (d.e);
+          p.dr_dir[0] = 0;
+          p.dr_fieldIndex = 0;
+          return false;
+        }
+      } while (d.n);
+    }
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  p.dr_dir[0] = 0;
+  p.dr_fieldIndex = 0;
+  return false;
+}
+
+function droneSubNinjaNorth(world: World, player: number, wantedDirChar: string): boolean {
+  const p = world.players[player]!;
+  let d: Dirs = { n: false, s: false, e: false, w: false };
+  let target_player = 0;
+  let targetPlayerFieldX = 0;
+  let playerFieldX = 0;
+  let playerFieldY = 0;
+
+  p.dr_fieldIndex = 0;
+  p.dr_upRotationCounter = 0;
+  p.dr_rotateCounter = 0;
+  p.dr_dir[0] = 0;
+  p.dr_field[0]!.y = 0;
+  target_player = p.dr_currentTarget;
+  playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  targetPlayerFieldX = (world.players[target_player]!.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  d = droneCheckDirsAt(world, player, false, 0, 0);
+  if (wantedDirChar === 'e' && !d.e && !d.n && d.w) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.w) break;
+      playerFieldX -= 2;
+      if (playerFieldX <= 0) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (d.n) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.n) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          playerFieldY -= 2;
+          if (playerFieldY <= 0) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.n && !d.e) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          if (d.e) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.e) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              playerFieldX += 2;
+              if (playerFieldX > MAZE_MAX_SIZE - 1) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.s && !d.e) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              if (d.s) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = playerFieldY + 2;
+                p.dr_field[3]!.x = playerFieldX;
+                p.dr_field[4]!.y = 0;
+                p.dr_dir[0] = PLAYER_DIR_WEST;
+                p.dr_dir[1] = NINJA_PLAN_NORTH;
+                p.dr_dir[2] = PLAYER_DIR_EAST;
+                p.dr_dir[3] = PLAYER_DIR_SOUTH;
+                p.dr_dir[4] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.e);
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            return false;
+          }
+        } while (d.n);
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        return false;
+      }
+    } while (d.w);
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  if (wantedDirChar === 'w' && !d.w && !d.n && d.e) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.e) break;
+      playerFieldX += 2;
+      if (playerFieldX > MAZE_MAX_SIZE - 1) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (d.n) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.n) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          playerFieldY -= 2;
+          if (playerFieldY <= 0) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.n && !d.w) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          if (d.w) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.w) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              playerFieldX -= 2;
+              if (playerFieldX < 0) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.w && !d.s) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              if (d.s) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = playerFieldY + 2;
+                p.dr_field[3]!.x = playerFieldX;
+                p.dr_field[4]!.y = 0;
+                p.dr_dir[0] = PLAYER_DIR_EAST;
+                p.dr_dir[1] = NINJA_PLAN_NORTH;
+                p.dr_dir[2] = PLAYER_DIR_WEST;
+                p.dr_dir[3] = PLAYER_DIR_SOUTH;
+                p.dr_dir[4] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.w);
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            return false;
+          }
+        } while (d.n);
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        return false;
+      }
+    } while (d.e);
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  if (d.n) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.n) break;
+      playerFieldY -= 2;
+      if (playerFieldY < 0) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (wantedDirChar === 'w' && d.w) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.w) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          playerFieldX -= 2;
+          if (playerFieldX <= 0) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.w && !d.s) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          if (d.s) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.s) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              playerFieldY += 2;
+              if (playerFieldY > MAZE_MAX_SIZE - 1) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.s && !d.e && !d.w) {
+                /* dead end? */
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              if (playerFieldX === targetPlayerFieldX || d.s || d.e || d.w) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = 0;
+                p.dr_dir[0] = NINJA_PLAN_NORTH;
+                p.dr_dir[1] = PLAYER_DIR_WEST;
+                p.dr_dir[2] = PLAYER_DIR_SOUTH;
+                p.dr_dir[3] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.s);
+          }
+        } while (d.w);
+      } else {
+        if (wantedDirChar === 'e' && d.e) {
+          p.dr_field[0]!.y = playerFieldY;
+          p.dr_field[0]!.x = playerFieldX;
+          do {
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.e) {
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            playerFieldX += 2;
+            if (playerFieldX > MAZE_MAX_SIZE - 1) {
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.e && !d.s) {
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            if (d.s) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              do {
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.s) {
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                playerFieldY += 2;
+                if (playerFieldY > MAZE_MAX_SIZE - 1) {
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.e && !d.s && !d.w) {
+                  /* dead end? */
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                if (playerFieldX === targetPlayerFieldX || d.s || d.e || d.w) {
+                  p.dr_field[2]!.y = playerFieldY;
+                  p.dr_field[2]!.x = playerFieldX;
+                  p.dr_field[3]!.y = 0;
+                  p.dr_dir[0] = NINJA_PLAN_NORTH;
+                  p.dr_dir[1] = PLAYER_DIR_EAST;
+                  p.dr_dir[2] = PLAYER_DIR_SOUTH;
+                  p.dr_dir[3] = -1;
+                  p.dr_fieldIndex = 0;
+                  return true;
+                }
+              } while (d.s);
+            }
+          } while (d.e);
+        }
+      }
+    } while (d.n);
+  }
+  playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  d = droneCheckDirsAt(world, player, false, 0, 0);
+  if (wantedDirChar === 'w' && d.n) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.n) break;
+      playerFieldY -= 2;
+      if (playerFieldY <= 0) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (d.e) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.e) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          playerFieldX += 2;
+          if (playerFieldX > MAZE_MAX_SIZE - 1) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.e && !d.n) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          if (d.n) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.n) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              playerFieldY -= 2;
+              if (playerFieldY <= 0) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.n && !d.w) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              if (d.w) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = playerFieldY;
+                p.dr_field[3]!.x = playerFieldX - 2;
+                p.dr_field[4]!.y = 0;
+                p.dr_dir[0] = NINJA_PLAN_NORTH;
+                p.dr_dir[1] = PLAYER_DIR_EAST;
+                p.dr_dir[2] = NINJA_PLAN_NORTH;
+                p.dr_dir[3] = PLAYER_DIR_WEST;
+                p.dr_dir[4] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.n);
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            return false;
+          }
+        } while (d.e);
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        return false;
+      }
+    } while (d.n);
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  if (wantedDirChar === 'e' && d.n) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.n) break;
+      playerFieldY -= 2;
+      if (playerFieldY <= 0) {
+        playerFieldY = p.dr_field[0]!.y;
+        break;
+      }
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (d.w) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.w) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          playerFieldX -= 2;
+          if (playerFieldX <= 0) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.w && !d.n) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          if (d.n) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.n) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              playerFieldY -= 2;
+              if (playerFieldY <= 0) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.n && !d.e) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              if (d.e) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = playerFieldY;
+                p.dr_field[3]!.x = playerFieldX + 2;
+                p.dr_field[4]!.y = 0;
+                p.dr_dir[0] = NINJA_PLAN_NORTH;
+                p.dr_dir[1] = PLAYER_DIR_WEST;
+                p.dr_dir[2] = NINJA_PLAN_NORTH;
+                p.dr_dir[3] = PLAYER_DIR_EAST;
+                p.dr_dir[4] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.n);
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            return false;
+          }
+        } while (d.w);
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        return false;
+      }
+    } while (d.n);
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  p.dr_dir[0] = 0;
+  p.dr_fieldIndex = 0;
+  return false;
+}
+
+function droneSubNinjaSouth(world: World, player: number, wantedDirChar: string): boolean {
+  const p = world.players[player]!;
+  let d: Dirs = { n: false, s: false, e: false, w: false };
+  let target_player = 0;
+  let targetPlayerFieldX = 0;
+  let playerFieldX = 0;
+  let playerFieldY = 0;
+
+  p.dr_fieldIndex = 0;
+  p.dr_upRotationCounter = 0;
+  p.dr_rotateCounter = 0;
+  p.dr_dir[0] = 0;
+  p.dr_field[0]!.y = 0;
+  target_player = p.dr_currentTarget;
+  playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  targetPlayerFieldX = (world.players[target_player]!.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  d = droneCheckDirsAt(world, player, false, 0, 0);
+  if (wantedDirChar === 'e' && !d.e && !d.s && d.w) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.w) break;
+      playerFieldX -= 2;
+      if (playerFieldX <= 0) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (d.s) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.s) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          playerFieldY += 2;
+          if (playerFieldY > MAZE_MAX_SIZE - 1) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.s && !d.e) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          if (d.e) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            p.dr_field[2]!.y = playerFieldY;
+            p.dr_field[2]!.x = playerFieldX + 2;
+            p.dr_field[3]!.y = 0;
+            p.dr_dir[0] = PLAYER_DIR_WEST;
+            p.dr_dir[1] = PLAYER_DIR_SOUTH;
+            p.dr_dir[2] = PLAYER_DIR_EAST;
+            p.dr_dir[3] = -1;
+            p.dr_fieldIndex = 0;
+            return true;
+          }
+        } while (d.s);
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        return false;
+      }
+    } while (d.w);
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  if (wantedDirChar === 'w' && !d.w && !d.s && d.e) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.e) break;
+      playerFieldX += 2;
+      if (playerFieldX > MAZE_MAX_SIZE - 1) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (d.s) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.s) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          playerFieldY += 2;
+          if (playerFieldY > MAZE_MAX_SIZE - 1) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.s && !d.w) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          if (d.w) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            p.dr_field[2]!.y = playerFieldY;
+            p.dr_field[2]!.x = playerFieldX - 2;
+            p.dr_field[3]!.y = 0;
+            p.dr_dir[0] = PLAYER_DIR_EAST;
+            p.dr_dir[1] = PLAYER_DIR_SOUTH;
+            p.dr_dir[2] = PLAYER_DIR_WEST;
+            p.dr_dir[3] = -1;
+            p.dr_fieldIndex = 0;
+            return true;
+          }
+        } while (d.s);
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        return false;
+      }
+    } while (d.e);
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  if (d.s) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.s) break;
+      playerFieldY += 2;
+      if (playerFieldY > MAZE_MAX_SIZE - 1) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.s && !d.e && !d.w) break; /* dead end? */
+      if (wantedDirChar === 'w' && d.w) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.w) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          playerFieldX -= 2;
+          if (playerFieldX <= 0) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.n && !d.w) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          if (d.n) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.n) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              playerFieldY -= 2;
+              if (playerFieldY <= 0) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.n && !d.e && !d.w) {
+                /* dead end? */
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              if (playerFieldX === targetPlayerFieldX || d.n || d.e || d.w) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = 0;
+                p.dr_dir[0] = PLAYER_DIR_SOUTH;
+                p.dr_dir[1] = PLAYER_DIR_WEST;
+                p.dr_dir[2] = NINJA_PLAN_NORTH;
+                p.dr_dir[3] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.n);
+          }
+        } while (d.w);
+      } else {
+        if (wantedDirChar === 'e' && d.e) {
+          p.dr_field[0]!.y = playerFieldY;
+          p.dr_field[0]!.x = playerFieldX;
+          do {
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.e) {
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            playerFieldX += 2;
+            if (playerFieldX > MAZE_MAX_SIZE - 1) {
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.n && !d.e) {
+              playerFieldX = p.dr_field[0]!.x;
+              break;
+            }
+            if (d.n) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              do {
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.n) {
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                playerFieldY -= 2;
+                if (playerFieldY <= 0) {
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.n && !d.e && !d.w) {
+                  /* dead end? */
+                  playerFieldY = p.dr_field[1]!.y;
+                  break;
+                }
+                if (playerFieldX === targetPlayerFieldX || d.n || d.e || d.w) {
+                  p.dr_field[2]!.y = playerFieldY;
+                  p.dr_field[2]!.x = playerFieldX;
+                  p.dr_field[3]!.y = 0;
+                  p.dr_dir[0] = PLAYER_DIR_SOUTH;
+                  p.dr_dir[1] = PLAYER_DIR_EAST;
+                  p.dr_dir[2] = NINJA_PLAN_NORTH;
+                  p.dr_dir[3] = -1;
+                  p.dr_fieldIndex = 0;
+                  return true;
+                }
+              } while (d.n);
+            }
+          } while (d.e);
+        }
+      }
+    } while (d.s);
+  }
+  playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  d = droneCheckDirsAt(world, player, false, 0, 0);
+  if (wantedDirChar === 'w' && d.s) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.s) break;
+      playerFieldY += 2;
+      if (playerFieldY > MAZE_MAX_SIZE - 1) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (d.w) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.w) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          playerFieldX -= 2;
+          if (playerFieldX <= 0) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.w && !d.s) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          if (d.s) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.s) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              playerFieldY += 2;
+              if (playerFieldY > MAZE_MAX_SIZE - 1) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.s && !d.e) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              if (d.e) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = playerFieldY;
+                p.dr_field[3]!.x = playerFieldX + 2;
+                p.dr_field[4]!.y = 0;
+                p.dr_dir[0] = PLAYER_DIR_SOUTH;
+                p.dr_dir[1] = PLAYER_DIR_WEST;
+                p.dr_dir[2] = PLAYER_DIR_SOUTH;
+                p.dr_dir[3] = PLAYER_DIR_EAST;
+                p.dr_dir[4] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.s);
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            return false;
+          }
+        } while (d.w);
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        return false;
+      }
+    } while (d.s);
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  if (wantedDirChar === 'e' && d.s) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.s) break;
+      playerFieldY += 2;
+      if (playerFieldY > MAZE_MAX_SIZE - 1) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (d.e) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.e) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          playerFieldX += 2;
+          if (playerFieldX > MAZE_MAX_SIZE - 1) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.e && !d.s) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          if (d.s) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.s) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              playerFieldY += 2;
+              if (playerFieldY > MAZE_MAX_SIZE - 1) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.s && !d.w) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              if (d.w) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = playerFieldY;
+                p.dr_field[3]!.x = playerFieldX - 2;
+                p.dr_field[4]!.y = 0;
+                p.dr_dir[0] = PLAYER_DIR_SOUTH;
+                p.dr_dir[1] = PLAYER_DIR_EAST;
+                p.dr_dir[2] = PLAYER_DIR_SOUTH;
+                p.dr_dir[3] = PLAYER_DIR_WEST;
+                p.dr_dir[4] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.s);
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            return false;
+          }
+        } while (d.e);
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        return false;
+      }
+    } while (d.s);
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  p.dr_dir[0] = 0;
+  p.dr_fieldIndex = 0;
+  return false;
+}
+
+function droneSubNinjaEast(world: World, player: number, wantedDirChar: string): boolean {
+  const p = world.players[player]!;
+  let d: Dirs = { n: false, s: false, e: false, w: false };
+  let target_player = 0;
+  let targetPlayerFieldY = 0;
+  let playerFieldX = 0;
+  let playerFieldY = 0;
+
+  p.dr_fieldIndex = 0;
+  p.dr_upRotationCounter = 0;
+  p.dr_rotateCounter = 0;
+  p.dr_dir[0] = 0;
+  p.dr_field[0]!.y = 0;
+  target_player = p.dr_currentTarget;
+  playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  targetPlayerFieldY = (world.players[target_player]!.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  d = droneCheckDirsAt(world, player, false, 0, 0);
+  if (wantedDirChar === 'n' && !d.n && !d.e && d.s) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.s) break;
+      playerFieldY += 2;
+      if (playerFieldY > MAZE_MAX_SIZE - 1) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (d.e) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.e) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          playerFieldX += 2;
+          if (playerFieldX > MAZE_MAX_SIZE - 1) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.e && !d.n) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          if (d.n) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.n) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              playerFieldY -= 2;
+              if (playerFieldY <= 0) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.n && !d.w) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              if (d.w) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = playerFieldY;
+                p.dr_field[3]!.x = playerFieldX - 2;
+                p.dr_field[4]!.y = 0;
+                p.dr_dir[0] = PLAYER_DIR_SOUTH;
+                p.dr_dir[1] = PLAYER_DIR_EAST;
+                p.dr_dir[2] = NINJA_PLAN_NORTH;
+                p.dr_dir[3] = PLAYER_DIR_WEST;
+                p.dr_dir[4] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.n);
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            return false;
+          }
+        } while (d.e);
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        return false;
+      }
+    } while (d.s);
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  if (wantedDirChar === 's' && !d.s && !d.e && d.n) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.n) break;
+      playerFieldY -= 2;
+      if (playerFieldY <= 0) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (d.e) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.e) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          playerFieldX += 2;
+          if (playerFieldX > MAZE_MAX_SIZE - 1) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.e && !d.s) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          if (d.s) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.s) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              playerFieldY += 2;
+              if (playerFieldY > MAZE_MAX_SIZE - 1) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.s && !d.w) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              if (d.w) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = playerFieldY;
+                p.dr_field[3]!.x = playerFieldX - 2;
+                p.dr_field[4]!.y = 0;
+                p.dr_dir[0] = NINJA_PLAN_NORTH;
+                p.dr_dir[1] = PLAYER_DIR_EAST;
+                p.dr_dir[2] = PLAYER_DIR_SOUTH;
+                p.dr_dir[3] = PLAYER_DIR_WEST;
+                p.dr_dir[4] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.s);
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            return false;
+          }
+        } while (d.e);
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        return false;
+      }
+    } while (d.n);
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  if (d.e) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.e) break;
+      playerFieldX += 2;
+      if (playerFieldX > MAZE_MAX_SIZE - 1) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (wantedDirChar === 'n' && d.n) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.n) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          playerFieldY -= 2;
+          if (playerFieldY <= 0) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.n && !d.w) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          if (d.w) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.w) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              playerFieldX -= 2;
+              if (playerFieldX <= 0) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.w && !d.n && !d.s) {
+                /* dead end? */
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              if (playerFieldY === targetPlayerFieldY || d.w || d.n || d.s) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = 0;
+                p.dr_dir[0] = PLAYER_DIR_EAST;
+                p.dr_dir[1] = NINJA_PLAN_NORTH;
+                p.dr_dir[2] = PLAYER_DIR_WEST;
+                p.dr_dir[3] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.w);
+          }
+        } while (d.n);
+      } else {
+        if (wantedDirChar === 's' && d.s) {
+          p.dr_field[0]!.y = playerFieldY;
+          p.dr_field[0]!.x = playerFieldX;
+          do {
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.s) break;
+            playerFieldY += 2;
+            if (playerFieldY > MAZE_MAX_SIZE - 1) {
+              playerFieldY = p.dr_field[0]!.y;
+              break;
+            }
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.s && !d.w) {
+              playerFieldY = p.dr_field[0]!.y;
+              break;
+            }
+            if (d.w) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              do {
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.w) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                playerFieldX -= 2;
+                if (playerFieldX <= 0) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.n && !d.w && !d.s) {
+                  /* dead end? */
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                if (playerFieldY === targetPlayerFieldY || d.w || d.n || d.s) {
+                  p.dr_field[2]!.y = playerFieldY;
+                  p.dr_field[2]!.x = playerFieldX;
+                  p.dr_field[3]!.y = 0;
+                  p.dr_dir[0] = PLAYER_DIR_EAST;
+                  p.dr_dir[1] = PLAYER_DIR_SOUTH;
+                  p.dr_dir[2] = PLAYER_DIR_WEST;
+                  p.dr_dir[3] = -1;
+                  p.dr_fieldIndex = 0;
+                  return true;
+                }
+              } while (d.w);
+            }
+          } while (d.s);
+        }
+      }
+    } while (d.e);
+  }
+  playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  d = droneCheckDirsAt(world, player, false, 0, 0);
+  if (wantedDirChar === 'n' && d.e) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.e) break;
+      playerFieldX += 2;
+      if (playerFieldX > MAZE_MAX_SIZE - 1) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.e && !d.s) break;
+      if (d.s) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.s) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          playerFieldY += 2;
+          if (playerFieldY > MAZE_MAX_SIZE - 1) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.s && !d.e) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          if (d.e) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.e) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              playerFieldX += 2;
+              if (playerFieldX > MAZE_MAX_SIZE - 1) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.e && !d.n) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              if (d.n) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = playerFieldY - 2;
+                p.dr_field[3]!.x = playerFieldX;
+                p.dr_field[4]!.y = 0;
+                p.dr_dir[0] = PLAYER_DIR_EAST;
+                p.dr_dir[1] = PLAYER_DIR_SOUTH;
+                p.dr_dir[2] = PLAYER_DIR_EAST;
+                p.dr_dir[3] = NINJA_PLAN_NORTH;
+                p.dr_dir[4] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.e);
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            return false;
+          }
+        } while (d.s);
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        return false;
+      }
+    } while (d.e);
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  if (wantedDirChar === 's' && d.e) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.e) break;
+      playerFieldX += 2;
+      if (playerFieldX > MAZE_MAX_SIZE - 1) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.e && !d.n) break;
+      if (d.n) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.n) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          playerFieldY -= 2;
+          if (playerFieldY <= 0) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.n && !d.e) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          if (d.e) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.e) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              playerFieldX += 2;
+              if (playerFieldX > MAZE_MAX_SIZE - 1) {
+                playerFieldX = p.dr_field[1]!.y;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.e && !d.s) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              if (d.s) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = playerFieldY + 2;
+                p.dr_field[3]!.x = playerFieldX;
+                p.dr_field[4]!.y = 0;
+                p.dr_dir[0] = PLAYER_DIR_EAST;
+                p.dr_dir[1] = NINJA_PLAN_NORTH;
+                p.dr_dir[2] = PLAYER_DIR_EAST;
+                p.dr_dir[3] = PLAYER_DIR_SOUTH;
+                p.dr_dir[4] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.e);
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            return false;
+          }
+        } while (d.n);
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        return false;
+      }
+    } while (d.e);
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  p.dr_dir[0] = 0;
+  p.dr_fieldIndex = 0;
+  return false;
+}
+
+function droneSubNinjaWest(world: World, player: number, wantedDirChar: string): boolean {
+  const p = world.players[player]!;
+  let d: Dirs = { n: false, s: false, e: false, w: false };
+  let target_player = 0;
+  let targetPlayerFieldY = 0;
+  let playerFieldX = 0;
+  let playerFieldY = 0;
+
+  p.dr_fieldIndex = 0;
+  p.dr_upRotationCounter = 0;
+  p.dr_rotateCounter = 0;
+  p.dr_dir[0] = 0;
+  p.dr_field[0]!.y = 0;
+  target_player = p.dr_currentTarget;
+  playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  targetPlayerFieldY = (world.players[target_player]!.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  d = droneCheckDirsAt(world, player, false, 0, 0);
+  if (wantedDirChar === 'n' && !d.n && !d.w && d.s) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.s) break;
+      playerFieldY += 2;
+      if (playerFieldY > MAZE_MAX_SIZE - 1) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.s && !d.w) break;
+      if (d.w) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.w) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          playerFieldX -= 2;
+          if (playerFieldX <= 0) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.w && !d.n) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          if (d.n) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.n) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              playerFieldY -= 2;
+              if (playerFieldY <= 0) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.n && !d.e) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              if (d.e) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = playerFieldY;
+                p.dr_field[3]!.x = playerFieldX + 2;
+                p.dr_field[4]!.y = 0;
+                p.dr_dir[0] = PLAYER_DIR_SOUTH;
+                p.dr_dir[1] = PLAYER_DIR_WEST;
+                p.dr_dir[2] = NINJA_PLAN_NORTH;
+                p.dr_dir[3] = PLAYER_DIR_EAST;
+                p.dr_dir[4] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.n);
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            return false;
+          }
+        } while (d.w);
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        return false;
+      }
+    } while (d.s);
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  if (wantedDirChar === 's' && !d.s && !d.w && d.n) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.n) break;
+      playerFieldY -= 2;
+      if (playerFieldY <= 0) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.n && !d.w) break;
+      if (d.w) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.w) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          playerFieldX -= 2;
+          if (playerFieldX <= 0) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.w && !d.s) {
+            playerFieldX = p.dr_field[0]!.x;
+            break;
+          }
+          if (d.s) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.s) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              playerFieldY += 2;
+              if (playerFieldY > MAZE_MAX_SIZE - 1) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.s && !d.e) {
+                playerFieldY = p.dr_field[1]!.y;
+                break;
+              }
+              if (d.e) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = playerFieldY;
+                p.dr_field[3]!.x = playerFieldX + 2;
+                p.dr_field[4]!.y = 0;
+                p.dr_dir[0] = NINJA_PLAN_NORTH;
+                p.dr_dir[1] = PLAYER_DIR_WEST;
+                p.dr_dir[2] = PLAYER_DIR_SOUTH;
+                p.dr_dir[3] = PLAYER_DIR_EAST;
+                p.dr_dir[4] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.s);
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            return false;
+          }
+        } while (d.w);
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        return false;
+      }
+    } while (d.n);
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  if (d.w) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.w) break;
+      playerFieldX -= 2;
+      if (playerFieldX <= 0) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (wantedDirChar === 'n' && d.n) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.n) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          playerFieldY -= 2;
+          if (playerFieldY <= 0) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.n && !d.e) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          if (d.e) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.e) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              playerFieldX += 2;
+              if (playerFieldX > MAZE_MAX_SIZE - 1) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.w && !d.e && !d.n) {
+                /* dead end? */
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              if (playerFieldY === targetPlayerFieldY || d.e || d.w || d.n) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = 0;
+                p.dr_dir[0] = PLAYER_DIR_WEST;
+                p.dr_dir[1] = NINJA_PLAN_NORTH;
+                p.dr_dir[2] = PLAYER_DIR_EAST;
+                p.dr_dir[3] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.e);
+          }
+        } while (d.n);
+      } else {
+        if (wantedDirChar === 's' && d.s) {
+          p.dr_field[0]!.y = playerFieldY;
+          p.dr_field[0]!.x = playerFieldX;
+          do {
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.s) {
+              playerFieldY = p.dr_field[0]!.y;
+              break;
+            }
+            playerFieldY += 2;
+            if (playerFieldY > MAZE_MAX_SIZE - 1) {
+              playerFieldY = p.dr_field[0]!.y;
+              break;
+            }
+            d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+            if (!d.s && !d.e) {
+              playerFieldY = p.dr_field[0]!.y;
+              break;
+            }
+            if (d.e) {
+              p.dr_field[1]!.y = playerFieldY;
+              p.dr_field[1]!.x = playerFieldX;
+              do {
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.e) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                playerFieldX += 2;
+                if (playerFieldX > MAZE_MAX_SIZE - 1) {
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+                if (!d.w && !d.e && !d.s) {
+                  /* dead end? */
+                  playerFieldX = p.dr_field[1]!.x;
+                  break;
+                }
+                if (playerFieldY === targetPlayerFieldY || d.e || d.s || d.w) {
+                  p.dr_field[2]!.y = playerFieldY;
+                  p.dr_field[2]!.x = playerFieldX;
+                  p.dr_field[3]!.y = 0;
+                  p.dr_dir[0] = PLAYER_DIR_WEST;
+                  p.dr_dir[1] = PLAYER_DIR_SOUTH;
+                  p.dr_dir[2] = PLAYER_DIR_EAST;
+                  p.dr_dir[3] = -1;
+                  p.dr_fieldIndex = 0;
+                  return true;
+                }
+              } while (d.e);
+            }
+          } while (d.s);
+        }
+      }
+    } while (d.w);
+  }
+  playerFieldY = (p.ply_y >> MAZE_FIELD_SHIFT) | 1;
+  playerFieldX = (p.ply_x >> MAZE_FIELD_SHIFT) | 1;
+  d = droneCheckDirsAt(world, player, false, 0, 0);
+  if (wantedDirChar === 'n' && d.w) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.w) break;
+      playerFieldX -= 2;
+      if (playerFieldX <= 0) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.w && !d.s) break;
+      if (d.s) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.s) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          playerFieldY += 2;
+          if (playerFieldY > MAZE_MAX_SIZE - 1) {
+            playerFieldY = p.dr_field[0]!.x;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.s && !d.w) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          if (d.w) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.w) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              playerFieldX -= 2;
+              if (playerFieldX <= 0) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.w && !d.n) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              if (d.n) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = playerFieldY - 2;
+                p.dr_field[3]!.x = playerFieldX;
+                p.dr_field[4]!.y = 0;
+                p.dr_dir[0] = PLAYER_DIR_WEST;
+                p.dr_dir[1] = PLAYER_DIR_SOUTH;
+                p.dr_dir[2] = PLAYER_DIR_WEST;
+                p.dr_dir[3] = NINJA_PLAN_NORTH;
+                p.dr_dir[4] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.w);
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            return false;
+          }
+        } while (d.s);
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        return false;
+      }
+    } while (d.w);
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  if (wantedDirChar === 's' && d.w) {
+    do {
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.w) break;
+      playerFieldX -= 2;
+      if (playerFieldX <= 0) break;
+      d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+      if (!d.w && !d.n) break;
+      if (d.n) {
+        p.dr_field[0]!.y = playerFieldY;
+        p.dr_field[0]!.x = playerFieldX;
+        do {
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.n) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          playerFieldY -= 2;
+          if (playerFieldY <= 0) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+          if (!d.n && !d.w) {
+            playerFieldY = p.dr_field[0]!.y;
+            break;
+          }
+          if (d.w) {
+            p.dr_field[1]!.y = playerFieldY;
+            p.dr_field[1]!.x = playerFieldX;
+            do {
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.w) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              playerFieldX -= 2;
+              if (playerFieldX <= 0) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              d = droneCheckDirsAt(world, player, true, playerFieldY, playerFieldX);
+              if (!d.w && !d.s) {
+                playerFieldX = p.dr_field[1]!.x;
+                break;
+              }
+              if (d.s) {
+                p.dr_field[2]!.y = playerFieldY;
+                p.dr_field[2]!.x = playerFieldX;
+                p.dr_field[3]!.y = playerFieldY + 2;
+                p.dr_field[3]!.x = playerFieldX;
+                p.dr_field[4]!.y = 0;
+                p.dr_dir[0] = PLAYER_DIR_WEST;
+                p.dr_dir[1] = NINJA_PLAN_NORTH;
+                p.dr_dir[2] = PLAYER_DIR_WEST;
+                p.dr_dir[3] = PLAYER_DIR_SOUTH;
+                p.dr_dir[4] = -1;
+                p.dr_fieldIndex = 0;
+                return true;
+              }
+            } while (d.w);
+            p.dr_dir[0] = 0;
+            p.dr_fieldIndex = 0;
+            return false;
+          }
+        } while (d.n);
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        return false;
+      }
+    } while (d.w);
+    p.dr_dir[0] = 0;
+    p.dr_fieldIndex = 0;
+    return false;
+  }
+  p.dr_dir[0] = 0;
+  p.dr_fieldIndex = 0;
+  return false;
+}
+
 /**
  * drone_action: pick a joystick byte for one drone slot, writing `joy[player]`.
- * TARGET and STANDARD drones (STORY-02); the NINJA branch is added in STORY-03.
+ * Handles all three drone types (TARGET, STANDARD, NINJA).
  */
 export function droneAction(world: World, player: number, joy: number[]): void {
   const p = world.players[player]!;
   switch (p.dr_type) {
+    case DRONE_NINJA: {
+      if (p.ply_lives <= 0) {
+        p.dr_dir[0] = 0;
+        p.dr_targetLocked = 0;
+        p.dr_fieldIndex = 0;
+        p.dr_field[0]!.y = 0;
+        p.dr_upRotationCounter = 0;
+        p.dr_rotateCounter = 0;
+        break;
+      }
+      const gunman = world.players[p.ply_gunman]!;
+      if (
+        p.ply_hitflag &&
+        p.ply_gunman !== p.dr_currentTarget &&
+        gunman.dr_type !== DRONE_NINJA &&
+        gunman.dr_type !== DRONE_STANDARD
+      ) {
+        if ((gunman.ply_team !== p.ply_team && world.teamFlag) || !world.teamFlag) {
+          p.dr_currentTarget = p.ply_gunman;
+          p.dr_dir[0] = 0;
+          p.dr_targetLocked = 0;
+          p.dr_fieldIndex = 0;
+          p.dr_field[0]!.y = 0;
+          p.dr_upRotationCounter = 0;
+          p.dr_rotateCounter = 0;
+        }
+      }
+      let target_player = p.dr_currentTarget;
+      if (target_player < 0 && world.teamFlag) {
+        droneCheckDirections(world, player);
+        droneGenerateJoystickdata(world, player, joy);
+        break;
+      }
+      if (droneTarget(world, p).ply_lives <= 0 && !world.teamFlag) {
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        p.dr_field[0]!.y = 0;
+        p.dr_upRotationCounter = 0;
+        p.dr_rotateCounter = 0;
+        if (p.dr_targetLocked) droneSubFindMoveToTarget(world, player);
+        if (world.players[p.dr_permanentTarget]!.ply_lives > 0) {
+          p.dr_currentTarget = p.dr_permanentTarget;
+          target_player = p.dr_currentTarget;
+        } else {
+          for (let i = 0; p.dr_humanEnemies[i] !== -1; i++) {
+            const enemy = world.players[i]!;
+            if (
+              enemy.ply_lives > 0 &&
+              enemy.dr_type !== DRONE_NINJA &&
+              enemy.dr_type !== DRONE_STANDARD
+            ) {
+              p.dr_currentTarget = p.dr_humanEnemies[i]!;
+              target_player = p.dr_currentTarget;
+              break;
+            }
+          }
+        }
+      } else if (droneTarget(world, p).ply_lives <= 0 && world.teamFlag) {
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        p.dr_field[0]!.y = 0;
+        p.dr_targetLocked = 0;
+        p.dr_fireDirection = -1;
+        p.dr_upRotationCounter = 0;
+        p.dr_rotateCounter = 0;
+        droneCheckDirections(world, player);
+        droneGenerateJoystickdata(world, player, joy);
+        break;
+      }
+      void target_player;
+      if (droneTarget(world, p).ply_lives <= 0) {
+        p.dr_dir[0] = 0;
+        p.dr_fieldIndex = 0;
+        p.dr_field[0]!.y = 0;
+        p.dr_targetLocked = 0;
+        p.dr_upRotationCounter = 0;
+        p.dr_rotateCounter = 0;
+        droneCheckDirections(world, player);
+        droneGenerateJoystickdata(world, player, joy);
+        break;
+      }
+      if (droneMove(world, player, joy)) return;
+      droneSubNinja(world, player);
+      droneGenerateJoystickdata(world, player, joy);
+      break;
+    }
     case DRONE_TARGET:
       if (p.ply_lives <= 0) {
         p.dr_dir[0] = 0;

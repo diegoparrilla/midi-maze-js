@@ -2,7 +2,7 @@
 id: EPIC-08
 iteration: 2
 title: Drone AI parity
-status: in-progress
+status: done
 ---
 
 ## Goal

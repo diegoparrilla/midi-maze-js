@@ -5,6 +5,7 @@ import type { Maze } from '../maze';
 import {
   assignDroneTypes,
   calcDroneAngleTable,
+  DRONE_NINJA,
   DRONE_STANDARD,
   DRONE_TARGET,
   droneAction,
@@ -22,6 +23,7 @@ const golden = JSON.parse(
   droneAngleTable: number[];
   droneSetup: DroneSetupCase[];
   droneTrace: DroneTraceCase[];
+  ninjaTrace: DroneTraceCase[];
 };
 
 interface DroneSetupCase {
@@ -42,7 +44,7 @@ interface DroneTraceCase {
   name: string;
   seed: number;
   humanPlayers: number;
-  drones: [number, number];
+  drones: [number, number, number];
   ticks: number;
   trace: {
     joy: number[];
@@ -55,6 +57,7 @@ interface DroneTraceCase {
       locked: number;
       rot: number;
       uprot: number;
+      fi: number;
     }[];
   }[];
 }
@@ -98,15 +101,16 @@ function setupTraceWorld(maze: Maze, c: DroneTraceCase) {
   world.reviveTime = 50;
   world.reviveLives = PLAYER_MAX_LIVES;
   world.friendlyFire = 0;
-  const [nTarget, nStd] = c.drones;
+  const [nTarget, nStd, nNinja] = c.drones;
   world.activeDronesByType[0] = nTarget;
   world.activeDronesByType[1] = nStd;
-  world.activeDronesByType[2] = 0;
-  const total = c.humanPlayers + nTarget + nStd;
+  world.activeDronesByType[2] = nNinja;
+  const total = c.humanPlayers + nTarget + nStd + nNinja;
   world.machinesOnline = c.humanPlayers;
   let j = c.humanPlayers;
   for (let i = 0; i < nTarget; i++) world.players[j++]!.dr_type = DRONE_TARGET;
   for (let i = 0; i < nStd; i++) world.players[j++]!.dr_type = DRONE_STANDARD;
+  for (let i = 0; i < nNinja; i++) world.players[j++]!.dr_type = DRONE_NINJA;
   droneSetup(world, c.humanPlayers);
   initAllPlayer(world, total, true);
   world.weDontHaveAWinner = 1;
@@ -123,6 +127,7 @@ function snapshot(world: World, total: number) {
     locked: p.dr_targetLocked,
     rot: p.dr_rotateCounter,
     uprot: p.dr_upRotationCounter,
+    fi: p.dr_fieldIndex,
   }));
 }
 
@@ -189,6 +194,19 @@ describe('drone_action (target + standard) vs C', () => {
 describe('step() drives the drones (STORY-04 integration)', () => {
   const maze = loadMaze('midimaze');
   for (const c of golden.droneTrace) {
+    it(`matches the C player state for "${c.name}" via step()`, () => {
+      const expected = c.trace.map((tick) => tick.players);
+      expect(runTraceViaStep(maze, c)).toEqual(expected);
+    });
+  }
+});
+
+describe('ninja drone_action vs C (STORY-03)', () => {
+  const maze = loadMaze('midimaze');
+  for (const c of golden.ninjaTrace) {
+    it(`reproduces the "${c.name}" ninja trace across ${c.ticks} ticks`, () => {
+      expect(runTraceCase(maze, c)).toEqual(c.trace);
+    });
     it(`matches the C player state for "${c.name}" via step()`, () => {
       const expected = c.trace.map((tick) => tick.players);
       expect(runTraceViaStep(maze, c)).toEqual(expected);

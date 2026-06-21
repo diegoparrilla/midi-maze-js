@@ -27,10 +27,11 @@ const status = document.querySelector<HTMLElement>('#status');
 const mazeJson = midimazeRaw as { size: number; data: number[] };
 const maze = { size: mazeJson.size, data: Int8Array.from(mazeJson.data), defect: false };
 
-// Solo demo: the human camera (player 0) versus two drones — one target drone
-// (wanders) and one standard drone (hunts the camera and fires).
+// Solo demo: the human camera (player 0) versus three drones — one target drone
+// (wanders), one standard drone (hunts the camera and fires), and one ninja drone
+// (pathfinds around walls toward the camera and fires).
 const HUMAN_COUNT = 1;
-const PLAYER_COUNT = 3;
+const PLAYER_COUNT = 4;
 const world = new World(maze, new Rng(7));
 world.reloadTime = 10;
 world.regenTime = 100;
@@ -39,6 +40,7 @@ world.reviveLives = 2;
 world.machinesOnline = HUMAN_COUNT;
 world.activeDronesByType[0] = 1; // one target drone
 world.activeDronesByType[1] = 1; // one standard drone
+world.activeDronesByType[2] = 1; // one ninja drone
 assignDroneTypes(world, HUMAN_COUNT);
 droneSetup(world, HUMAN_COUNT);
 initAllPlayer(world, PLAYER_COUNT, true);
@@ -79,7 +81,7 @@ function fit(c: HTMLCanvasElement): void {
 }
 
 function frame(): void {
-  const joyTable = [joyByte(), 0, 0]; // player 0 is the camera; drone slots are filled by step()
+  const joyTable = [joyByte(), 0, 0, 0]; // player 0 is the camera; drone slots are filled by step()
   step(world, joyTable, dronesActive);
   const p = world.players[0]!;
   if (mapMode) {
