@@ -4,6 +4,7 @@ import midimazeRaw from './assets/generated/mazes/midimaze.json';
 import { drawCrosshair, drawHappyIndicator, drawScoreboard } from './render/hud';
 import { drawMap2D } from './render/map2d';
 import { drawView3D } from './render/view3d';
+import { assignDroneTypes, droneSetup } from './sim/drone';
 import {
   JOYSTICK_BUTTON,
   JOYSTICK_DOWN,
@@ -26,26 +27,24 @@ const status = document.querySelector<HTMLElement>('#status');
 const mazeJson = midimazeRaw as { size: number; data: number[] };
 const maze = { size: mazeJson.size, data: Int8Array.from(mazeJson.data), defect: false };
 
-// Solo demo: a camera (player 0) plus two stationary opponents in the open row-1
-// corridor, so the eyeball sprites are visible until drones/networking arrive.
-const PLAYER_COUNT = 3;
+// Solo demo: the human camera (player 0) versus three drones — one target drone
+// (wanders), one standard drone (hunts the camera and fires), and one ninja drone
+// (pathfinds around walls toward the camera and fires).
+const HUMAN_COUNT = 1;
+const PLAYER_COUNT = 4;
 const world = new World(maze, new Rng(7));
 world.reloadTime = 10;
 world.regenTime = 100;
 world.reviveTime = 50;
 world.reviveLives = 2;
-initAllPlayer(world, PLAYER_COUNT);
-const starts = [
-  { y: 128, x: 128, dir: 64 }, // camera, facing east
-  { y: 128, x: 640, dir: 192 }, // opponent at field (1,5), facing the camera
-  { y: 128, x: 1152, dir: 192 }, // opponent at field (1,9)
-];
-starts.forEach((s, i) => {
-  const p = world.players[i]!;
-  p.ply_y = s.y;
-  p.ply_x = s.x;
-  p.ply_dir = s.dir;
-});
+world.machinesOnline = HUMAN_COUNT;
+world.activeDronesByType[0] = 1; // one target drone
+world.activeDronesByType[1] = 1; // one standard drone
+world.activeDronesByType[2] = 1; // one ninja drone
+assignDroneTypes(world, HUMAN_COUNT);
+droneSetup(world, HUMAN_COUNT);
+initAllPlayer(world, PLAYER_COUNT, true);
+const dronesActive = PLAYER_COUNT > HUMAN_COUNT ? 1 : 0;
 
 // Synth-dashboard background (the maze view + HUD are drawn into its panels).
 const dashboard = new Image();
@@ -82,8 +81,8 @@ function fit(c: HTMLCanvasElement): void {
 }
 
 function frame(): void {
-  const joyTable = [joyByte(), 0, 0]; // only player 0 (the camera) is controlled
-  step(world, joyTable);
+  const joyTable = [joyByte(), 0, 0, 0]; // player 0 is the camera; drone slots are filled by step()
+  step(world, joyTable, dronesActive);
   const p = world.players[0]!;
   if (mapMode) {
     drawMap2D(ctx!, world);
