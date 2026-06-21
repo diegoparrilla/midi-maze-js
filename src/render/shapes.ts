@@ -24,6 +24,9 @@ const COLOR_PLY_BACK = [8, 3, 9, 13, 11, 12, 10, 15, 8, 3, 9, 13, 11, 12, 10, 15
 const COLOR_PLY_FRAME = [0, 0, 0, 0, 0, 0, 0, 0, 10, 11, 10, 11, 10, 10, 11, 10];
 const COLOR_DKGREEN = 5;
 const BODY_SHAPE_BACK_VIEW = 10;
+const BODY_SHAPE_FRONT_VIEW = 0; // smily from the front (globals.h)
+const BODY_SHAPE_MAX_SIZE = 32; // largest body size (globals.h)
+const BODY_SHAPE_NO_SHADOW = 50; // shadow offset that hides the shadow (globals.h)
 const MAX_HEIGHT = VIEW_SKY_HEIGHT + VIEW_FLOOR_HEIGHT; // 100
 
 // Derived shadow images: a vertically-squished sampling of each ball shape.
@@ -112,4 +115,4 @@ export function drawShape(
   blitMask(ctx, face.rows, 0, ww, h, x, top, COLOR_PLY_FRAME[colorIndex & 15]!);
 }
 
-export { BODY_SHAPE_BACK_VIEW };
+export { BODY_SHAPE_BACK_VIEW, BODY_SHAPE_FRONT_VIEW, BODY_SHAPE_MAX_SIZE, BODY_SHAPE_NO_SHADOW };

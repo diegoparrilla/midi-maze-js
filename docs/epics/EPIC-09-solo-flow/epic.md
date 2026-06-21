@@ -2,7 +2,7 @@
 id: EPIC-09
 iteration: 2
 title: Solo game flow
-status: todo
+status: done
 ---
 
 ## Goal
@@ -16,7 +16,14 @@ drones (EPIC-08) for opponents.
 
 ## Stories
 
-Authored at the start of iteration 2 (just-in-time, per ITERATIONS.md).
+- STORY-01: Flow state machine — `preview → playing → gameover → restart`, with a
+  pure, unit-tested core (`findWinner`, phase/timer transitions) wired into the
+  main loop. Win is the golden-tested `weDontHaveAWinner` flag from the sim.
+- STORY-02: Start map-preview "countdown" (show the 2D map with all players for a
+  faithful delay before play) + dead-player view (the shooter's face + greeting
+  while you wait to respawn), per `maingame.c`.
+- STORY-03: Game-over screen (You win / `<player>` wins, win vs. lose presentation)
+  and restart-on-input back to a fresh game.
 
 ## Notes
 
