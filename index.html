@@ -4,16 +4,58 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
+    <!-- iPhone Safari has no Fullscreen API; "Add to Home Screen" launches the page
+         standalone (chrome-less), which is the only real fullscreen on iOS. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="MIDI Maze" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <title>MIDI Maze</title>
     <link rel="stylesheet" href="./src/style.css" />
   </head>
   <body>
     <main id="app">
       <canvas id="screen" width="320" height="200"></canvas>
+
+      <!-- On-screen controls (shown only on touch / coarse-pointer devices) -->
+      <div id="touch-controls" hidden>
+        <div id="dpad">
+          <button class="pad pad-up" data-control="up" aria-label="up">▲</button>
+          <button class="pad pad-left" data-control="left" aria-label="left">◀</button>
+          <button class="pad pad-right" data-control="right" aria-label="right">▶</button>
+          <button class="pad pad-down" data-control="down" aria-label="down">▼</button>
+        </div>
+        <button id="map-btn" aria-label="toggle map">MAP</button>
+        <button id="fire-btn" data-control="fire" aria-label="fire">●</button>
+        <button id="menu-btn" aria-label="menu">≡</button>
+      </div>
+
+      <button id="fullscreen-btn" aria-label="fullscreen" title="Fullscreen (F)">⛶</button>
     </main>
+
     <div id="status"></div>
+
+    <!-- Orientation gate: shown on touch devices held in portrait -->
+    <div id="rotate-overlay" hidden>
+      <div class="rotate-inner">
+        <div class="rotate-icon">⟳</div>
+        <p>Please rotate your device<br />to landscape to play</p>
+      </div>
+    </div>
+
+    <!-- Minimal in-game menu (full menus arrive in EPIC-20) -->
+    <div id="menu-overlay" hidden>
+      <div class="menu-panel">
+        <h2>Menu</h2>
+        <button data-action="map">Toggle map</button>
+        <button data-action="fullscreen">Fullscreen</button>
+        <button data-action="restart">Restart game</button>
+        <button data-action="close">Resume</button>
+      </div>
+    </div>
+
     <script type="module" src="./src/main.ts"></script>
   </body>
 </html>
