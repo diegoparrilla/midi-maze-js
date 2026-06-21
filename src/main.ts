@@ -1,8 +1,21 @@
 import './style.css';
 import dashboardUrl from './assets/generated/main-screen.png';
-import midimazeRaw from './assets/generated/mazes/midimaze.json';
+import {
+  applyConfig,
+  defaultConfig,
+  type GameConfig,
+  maxDrones,
+  TIME_REGEN_FAST,
+  TIME_REGEN_SLOW,
+  TIME_RELOAD_FAST,
+  TIME_RELOAD_SLOW,
+  TIME_REVIVE_FAST,
+  TIME_REVIVE_SLOW,
+  totalDrones,
+} from './game/config';
 import { GameFlow } from './game/flow';
 import { Input, type Control } from './game/input';
+import { loadMazeById, MAZE_OPTIONS } from './game/mazes';
 import { drawCrosshair, drawHappyIndicator, drawScoreboard } from './render/hud';
 import { drawMap2D } from './render/map2d';
 import { VIEW_SCREEN_X, VIEW_SCREEN_Y, VIEW_WIDTH } from './render/projection';
@@ -34,6 +47,7 @@ const app = $<HTMLElement>('#app');
 const touchControls = $<HTMLElement>('#touch-controls');
 const rotateOverlay = $<HTMLElement>('#rotate-overlay');
 const menuOverlay = $<HTMLElement>('#menu-overlay');
+const lobby = $<HTMLElement>('#lobby');
 
 const isTouch = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 // iPhone Safari exposes no Fullscreen API; iPad/desktop do. Detect real support.
@@ -43,43 +57,45 @@ const isStandalone =
   window.matchMedia('(display-mode: standalone)').matches ||
   (navigator as Navigator & { standalone?: boolean }).standalone === true;
 
-const mazeJson = midimazeRaw as { size: number; data: number[] };
-const maze = { size: mazeJson.size, data: Int8Array.from(mazeJson.data), defect: false };
-
-// Solo game: the human camera (player 0) versus three drones — target (wanders),
-// standard (hunts on straight corridors) and ninja (pathfinds), all to GAME_WIN_SCORE.
+// Solo game: the human camera (player 0) versus the drones configured in the lobby,
+// all racing to GAME_WIN_SCORE. The lobby (EPIC-20) builds the GameConfig.
 const HUMAN_COUNT = 1;
-const PLAYER_COUNT = 4;
-const DRONES_ACTIVE = PLAYER_COUNT > HUMAN_COUNT ? 1 : 0;
 let seed = 7;
+const config: GameConfig = defaultConfig();
+config.drones = [1, 1, 1]; // a lively default: one of each drone type
 
-/** Build a fresh, configured world for a new game (used at start and on restart). */
-function newWorld(): World {
-  const w = new World(maze, new Rng(seed++));
-  w.reloadTime = 10;
-  w.regenTime = 100;
-  w.reviveTime = 50;
-  w.reviveLives = 2;
+/** Build a fresh world from the current lobby config (called on Start). */
+function newWorld(cfg: GameConfig): World {
+  const w = new World(loadMazeById(cfg.mazeId), new Rng(seed++));
   w.machinesOnline = HUMAN_COUNT;
-  w.activeDronesByType[0] = 1; // target drone
-  w.activeDronesByType[1] = 1; // standard drone
-  w.activeDronesByType[2] = 1; // ninja drone
+  applyConfig(w, cfg, HUMAN_COUNT);
   assignDroneTypes(w, HUMAN_COUNT);
   droneSetup(w, HUMAN_COUNT);
-  initAllPlayer(w, PLAYER_COUNT, true);
+  const total =
+    HUMAN_COUNT + w.activeDronesByType[0]! + w.activeDronesByType[1]! + w.activeDronesByType[2]!;
+  initAllPlayer(w, total, true);
   w.weDontHaveAWinner = 1;
   return w;
 }
 
-let world = newWorld();
+let world = newWorld(config);
 const flow = new GameFlow();
 const input = new Input();
 let mapMode = false;
 let orientationBlocked = false;
 
-function restartGame(): void {
-  world = newWorld();
-  flow.restart();
+/** Leave the lobby and start a configured game. */
+function startGame(): void {
+  world = newWorld(config);
+  mapMode = false;
+  flow.startGame();
+  lobby.hidden = true;
+}
+
+/** End the current game and return to the lobby. */
+function quitToLobby(): void {
+  flow.restart(); // -> 'lobby'
+  lobby.hidden = false;
 }
 
 // Synth-dashboard background (the maze view + HUD are drawn into its panels).
@@ -169,15 +185,16 @@ menuOverlay.addEventListener('click', (e) => {
   }
   const action = (e.target as HTMLElement).dataset.action;
   if (!action) return;
-  if (action === 'map') mapMode = !mapMode;
-  else if (action === 'fullscreen') void toggleFullscreen();
-  else if (action === 'restart') restartGame();
+  if (action === 'fullscreen') void toggleFullscreen();
+  else if (action === 'restart') quitToLobby();
   closeMenu();
 });
 
 // ---- Keyboard input ----
 window.addEventListener('keydown', (e) => {
-  // Escape toggles the menu (the only keyboard path to restart mid-game on desktop).
+  // In the lobby, let the DOM controls (name field, buttons) handle keys.
+  if (flow.phase === 'lobby') return;
+  // Escape toggles the menu (the only keyboard path to quit mid-game on desktop).
   if (e.key === 'Escape') {
     if (menuOpen()) closeMenu();
     else openMenu();
@@ -185,7 +202,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (menuOpen()) return; // menu swallows gameplay keys while open
   if (flow.canRestart()) {
-    restartGame();
+    quitToLobby();
     e.preventDefault();
     return;
   }
@@ -205,9 +222,9 @@ function wireTouchControls(): void {
     const control = btn.dataset.control as Control;
     const press = (on: boolean) => (e: Event) => {
       e.preventDefault();
-      // A finished game restarts on any control press.
+      // A finished game returns to the lobby on any control press.
       if (on && flow.canRestart()) {
-        restartGame();
+        quitToLobby();
         return;
       }
       input.setButton(control, on);
@@ -231,6 +248,120 @@ fullscreenBtn.addEventListener('click', () => void toggleFullscreen());
 // Hide the button when there's nothing it can do: already standalone, or a touch
 // device with no Fullscreen API (iPhone) where it would only ever show the hint.
 if (isStandalone || (!fullscreenSupported && isTouch)) fullscreenBtn.hidden = true;
+// Fullscreen in the menu only makes sense on desktop; drop it on touch devices.
+if (isTouch) {
+  const menuFs = menuOverlay.querySelector<HTMLElement>('[data-action="fullscreen"]');
+  if (menuFs) menuFs.hidden = true;
+}
+
+// ---- Lobby (EPIC-20 STORY-02/03/04), GEM-styled widgets ----
+/** Current selected value for a radio group, as a data-val string. */
+function radioValue(group: string): string {
+  switch (group) {
+    case 'reload':
+      return config.reloadTime === TIME_RELOAD_FAST ? 'fast' : 'slow';
+    case 'regen':
+      return config.regenTime === TIME_REGEN_FAST ? 'fast' : 'slow';
+    case 'revive':
+      return config.reviveTime === TIME_REVIVE_FAST ? 'fast' : 'slow';
+    case 'lives':
+      return String(config.reviveLives);
+    default:
+      return '';
+  }
+}
+
+function applyRadio(group: string, val: string): void {
+  switch (group) {
+    case 'reload':
+      config.reloadTime = val === 'fast' ? TIME_RELOAD_FAST : TIME_RELOAD_SLOW;
+      break;
+    case 'regen':
+      config.regenTime = val === 'fast' ? TIME_REGEN_FAST : TIME_REGEN_SLOW;
+      break;
+    case 'revive':
+      config.reviveTime = val === 'fast' ? TIME_REVIVE_FAST : TIME_REVIVE_SLOW;
+      break;
+    case 'lives':
+      config.reviveLives = Number(val);
+      break;
+  }
+}
+
+function renderLobby(): void {
+  const mazeVal = lobby.querySelector<HTMLElement>('#cfg-maze-val');
+  if (mazeVal)
+    mazeVal.textContent = MAZE_OPTIONS.find((m) => m.id === config.mazeId)?.label ?? config.mazeId;
+
+  // radio groups: mark the selected option
+  lobby.querySelectorAll<HTMLElement>('.gem-radios').forEach((grp) => {
+    const sel = radioValue(grp.dataset.radio ?? '');
+    grp.querySelectorAll<HTMLElement>('.gem-radio').forEach((btn) => {
+      btn.classList.toggle('sel', btn.dataset.val === sel);
+    });
+  });
+
+  // checkboxes
+  lobby
+    .querySelector<HTMLElement>('[data-check="friendly"]')
+    ?.classList.toggle('on', config.friendlyFire);
+  lobby.querySelector<HTMLElement>('[data-check="teams"]')?.classList.toggle('on', config.teamFlag);
+
+  for (let i = 0; i < 3; i++) {
+    const v = lobby.querySelector<HTMLElement>(`[data-drone="${i}"]`);
+    if (v) v.textContent = String(config.drones[i]);
+  }
+  const name = lobby.querySelector<HTMLInputElement>('#cfg-name');
+  if (name && name.value !== config.playerName) name.value = config.playerName;
+}
+
+function wireLobby(): void {
+  lobby.querySelectorAll<HTMLElement>('.gem-radios').forEach((grp) => {
+    const group = grp.dataset.radio ?? '';
+    grp.querySelectorAll<HTMLElement>('.gem-radio').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        applyRadio(group, btn.dataset.val ?? '');
+        renderLobby();
+      });
+    });
+  });
+  lobby.querySelectorAll<HTMLElement>('[data-check]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.check === 'friendly') config.friendlyFire = !config.friendlyFire;
+      else if (btn.dataset.check === 'teams') config.teamFlag = !config.teamFlag;
+      renderLobby();
+    });
+  });
+  lobby.querySelectorAll<HTMLElement>('[data-maze]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const dir = Number(btn.dataset.maze); // -1 or +1
+      const n = MAZE_OPTIONS.length;
+      const idx = MAZE_OPTIONS.findIndex((m) => m.id === config.mazeId);
+      config.mazeId = MAZE_OPTIONS[(idx + dir + n) % n]!.id;
+      renderLobby();
+    });
+  });
+  lobby.querySelectorAll<HTMLElement>('[data-drone-up]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const i = Number(btn.dataset.droneUp);
+      if (totalDrones(config.drones) < maxDrones(HUMAN_COUNT)) {
+        config.drones[i] = (config.drones[i] ?? 0) + 1;
+      }
+      renderLobby();
+    });
+  });
+  lobby.querySelectorAll<HTMLElement>('[data-drone-dn]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const i = Number(btn.dataset.droneDn);
+      config.drones[i] = Math.max(0, (config.drones[i] ?? 0) - 1);
+      renderLobby();
+    });
+  });
+  lobby.querySelector<HTMLInputElement>('#cfg-name')?.addEventListener('input', (e) => {
+    config.playerName = (e.target as HTMLInputElement).value.toUpperCase().slice(0, 8);
+  });
+  $<HTMLButtonElement>('#lobby-start').addEventListener('click', startGame);
+}
 
 // ---- Rendering ----
 function viewText(text: string, dy: number, color = '#000'): void {
@@ -281,19 +412,36 @@ function frame(): void {
     return;
   }
 
+  // Lobby: the GEM dialog floats over the (frozen) playfield. Render the maze view
+  // behind it, but don't step the sim.
+  if (flow.phase === 'lobby') {
+    lobby.hidden = false;
+    const lp = world.players[0]!;
+    drawDashboard();
+    drawView3D(ctx!, world, lp.ply_y, lp.ply_x, lp.ply_dir, 0);
+    drawHappyIndicator(ctx!, world, 0);
+    drawScoreboard(ctx!, world);
+    requestAnimationFrame(frame);
+    return;
+  }
+
   const stepNow = flow.tick(world);
   if (stepNow) {
     const joyTable = [input.joyByte(), 0, 0, 0]; // player 0 is the camera; drones filled by step()
-    step(world, joyTable, DRONES_ACTIVE);
+    const dronesActive = world.playerAndDroneCount > world.machinesOnline ? 1 : 0;
+    step(world, joyTable, dronesActive);
   }
   const p = world.players[0]!;
 
   if (flow.phase === 'gameover') {
     drawGameOver();
-  } else if (flow.phase === 'preview') {
+  } else if (flow.phase === 'preview' || mapMode) {
+    // The 2D map is drawn inside the game view window (draw2d.c), with the HUD
+    // around it — not full-screen. Preview also shows the map.
+    drawDashboard();
     drawMap2D(ctx!, world);
-  } else if (mapMode) {
-    drawMap2D(ctx!, world);
+    drawHappyIndicator(ctx!, world, 0);
+    drawScoreboard(ctx!, world);
   } else {
     drawDashboard();
     if (p.ply_lives > 0) {
@@ -336,6 +484,9 @@ window.addEventListener('orientationchange', () => {
 document.addEventListener('fullscreenchange', fit);
 
 wireTouchControls();
+wireLobby();
+renderLobby();
+lobby.hidden = false; // start in the lobby
 fit();
 updateOrientation();
 requestAnimationFrame(frame);

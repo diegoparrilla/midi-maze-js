@@ -45,14 +45,106 @@
       </div>
     </div>
 
-    <!-- Minimal in-game menu (full menus arrive in EPIC-20) -->
+    <!-- In-game menu (GEM/TOS styled) -->
     <div id="menu-overlay" hidden>
-      <div class="menu-panel">
-        <h2>Menu</h2>
-        <button data-action="map">Toggle map</button>
-        <button data-action="fullscreen">Fullscreen</button>
-        <button data-action="restart">Restart game</button>
-        <button data-action="close">Resume</button>
+      <div class="gem-dialog gem-menu">
+        <div class="gem-title"><span>MENU</span></div>
+        <div class="gem-menu-body">
+          <button class="gem-btn" data-action="fullscreen">Fullscreen</button>
+          <button class="gem-btn" data-action="restart">Quit to lobby</button>
+          <button class="gem-btn gem-default" data-action="close">Resume</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lobby (EPIC-20): a GEM/TOS-styled config dialog. -->
+    <div id="lobby" hidden>
+      <div class="gem-dialog" role="dialog" aria-label="Game setup">
+        <div class="gem-title"><span>MIDI MAZE</span></div>
+        <div class="gem-body">
+          <div class="grow">
+            <label>Name</label>
+            <input
+              id="cfg-name"
+              class="gem-input"
+              maxlength="8"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+          <div class="grow">
+            <label>Maze</label>
+            <span class="gem-sel">
+              <button class="gem-btn" data-maze="-1" aria-label="previous maze">&lsaquo;</button>
+              <b class="maze-val" id="cfg-maze-val">MIDI MAZE</b>
+              <button class="gem-btn" data-maze="1" aria-label="next maze">&rsaquo;</button>
+            </span>
+          </div>
+          <div class="grow">
+            <label>Reload</label>
+            <span class="gem-radios" data-radio="reload">
+              <button class="gem-radio" data-val="fast">Fast</button>
+              <button class="gem-radio" data-val="slow">Slow</button>
+            </span>
+          </div>
+          <div class="grow">
+            <label>Regen</label>
+            <span class="gem-radios" data-radio="regen">
+              <button class="gem-radio" data-val="fast">Fast</button>
+              <button class="gem-radio" data-val="slow">Slow</button>
+            </span>
+          </div>
+          <div class="grow">
+            <label>Revive</label>
+            <span class="gem-radios" data-radio="revive">
+              <button class="gem-radio" data-val="fast">Fast</button>
+              <button class="gem-radio" data-val="slow">Slow</button>
+            </span>
+          </div>
+          <div class="grow">
+            <label>Lives</label>
+            <span class="gem-radios" data-radio="lives">
+              <button class="gem-radio" data-val="1">1</button>
+              <button class="gem-radio" data-val="2">2</button>
+              <button class="gem-radio" data-val="3">3</button>
+            </span>
+          </div>
+          <div class="grow">
+            <label>Friendly fire</label>
+            <button class="gem-check" data-check="friendly" aria-label="friendly fire"></button>
+          </div>
+          <div class="grow">
+            <label>Teams</label>
+            <button class="gem-check" data-check="teams" aria-label="teams"></button>
+          </div>
+          <div class="grow">
+            <label>Target drones</label>
+            <span class="gem-step">
+              <button class="gem-btn" data-drone-dn="0">&minus;</button>
+              <b data-drone="0">0</b>
+              <button class="gem-btn" data-drone-up="0">+</button>
+            </span>
+          </div>
+          <div class="grow">
+            <label>Standard drones</label>
+            <span class="gem-step">
+              <button class="gem-btn" data-drone-dn="1">&minus;</button>
+              <b data-drone="1">0</b>
+              <button class="gem-btn" data-drone-up="1">+</button>
+            </span>
+          </div>
+          <div class="grow">
+            <label>Ninja drones</label>
+            <span class="gem-step">
+              <button class="gem-btn" data-drone-dn="2">&minus;</button>
+              <b data-drone="2">0</b>
+              <button class="gem-btn" data-drone-up="2">+</button>
+            </span>
+          </div>
+        </div>
+        <div class="gem-actions">
+          <button id="lobby-start" class="gem-btn gem-default">Start</button>
+        </div>
       </div>
     </div>
 

@@ -3,7 +3,7 @@
 // is the sim's golden-tested `weDontHaveAWinner` flag; this only sequences phases.
 import { GAME_WIN_SCORE, type World } from '../sim/world';
 
-export type Phase = 'preview' | 'playing' | 'gameover';
+export type Phase = 'lobby' | 'preview' | 'playing' | 'gameover';
 
 // Faithful-ish frame budgets at ~60fps. The original shows the start map for ~300
 // Vsync frames (maingame.c:218) before play; the game-over screen holds briefly
@@ -32,14 +32,24 @@ export function findWinner(world: World): number {
  * player presses a key, the caller resets the world and calls `restart()`.
  */
 export class GameFlow {
-  phase: Phase = 'preview';
-  timer = PREVIEW_TICKS;
+  // Lobby-first: the player configures a game and presses Start (EPIC-20).
+  phase: Phase = 'lobby';
+  timer = 0;
   /** Winning player index once `phase === 'gameover'`, else -1. */
   winner = -1;
+
+  /** Leave the lobby and begin a configured game (caller has built the world). */
+  startGame(): void {
+    this.phase = 'preview';
+    this.timer = PREVIEW_TICKS;
+    this.winner = -1;
+  }
 
   /** Advance the flow before rendering. Returns true if the sim should be stepped. */
   tick(world: World): boolean {
     switch (this.phase) {
+      case 'lobby':
+        return false;
       case 'preview':
         if (--this.timer <= 0) {
           this.phase = 'playing';
@@ -65,10 +75,10 @@ export class GameFlow {
     return this.phase === 'gameover' && this.timer <= 0;
   }
 
-  /** Back to the map preview for a fresh game (the caller re-inits the world). */
+  /** Back to the lobby after a finished game (the caller shows the lobby UI). */
   restart(): void {
-    this.phase = 'preview';
-    this.timer = PREVIEW_TICKS;
+    this.phase = 'lobby';
+    this.timer = 0;
     this.winner = -1;
   }
 }
