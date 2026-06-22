@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { defaultConfig } from '../game/config';
 import { loadMazeById } from '../game/mazes';
 import { ByteChannel } from './ring';
-import { runSetup } from './setup';
+import { DEFAULT_SEND_WINDOW, getSendWindow, runSetup, setSendWindow } from './setup';
 
 describe('runSetup host (ring of one, self-echo)', () => {
   it('elects itself and round-trips its own block', async () => {
@@ -18,6 +18,21 @@ describe('runSetup host (ring of one, self-echo)', () => {
     expect(r.names).toEqual(['HOST']);
     expect(r.config.drones).toEqual([1, 0, 2]);
     expect(r.maze.data.length).toBe(loadMazeById('midimaze').data.length);
+  });
+});
+
+describe('sendWindow (tunable windowed-echo for the ST bridge, EPIC-18)', () => {
+  it('defaults, clamps to >= 1, caps at 512, and floors fractions', () => {
+    expect(getSendWindow()).toBe(DEFAULT_SEND_WINDOW);
+    setSendWindow(8);
+    expect(getSendWindow()).toBe(8);
+    setSendWindow(0); // invalid: ignored
+    expect(getSendWindow()).toBe(8);
+    setSendWindow(10000);
+    expect(getSendWindow()).toBe(512);
+    setSendWindow(16.9);
+    expect(getSendWindow()).toBe(16);
+    setSendWindow(DEFAULT_SEND_WINDOW); // restore for other tests
   });
 });
 

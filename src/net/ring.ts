@@ -23,6 +23,9 @@ export class ByteChannel implements RingChannel {
 
   private readonly sender: (bytes: Uint8Array) => void;
 
+  /** The last control byte (>= 0x80) we sent, for interop telemetry. -1 if none yet. */
+  lastControlByte = -1;
+
   constructor(sender: (bytes: Uint8Array) => void) {
     this.sender = sender;
   }
@@ -32,7 +35,9 @@ export class ByteChannel implements RingChannel {
   }
 
   sendByte(b: number): void {
-    this.sender(Uint8Array.of(b & 0xff));
+    const byte = b & 0xff;
+    if (byte >= 0x80) this.lastControlByte = byte; // COUNT/START/TERMINATE/SEND_DATA/NAME…
+    this.sender(Uint8Array.of(byte));
   }
 
   /** Feed inbound bytes (wire `Transport.onBytes`). */

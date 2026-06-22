@@ -94,6 +94,7 @@ describe('NetGame pump', () => {
     expect(await game.runTick(ch)).toBeNull();
     expect(await game.runTick(ch)).toBeNull();
     expect(game.tick).toBe(2);
+    expect(game.lastJoy).toEqual([JOYSTICK_UP]); // exposed for interop telemetry (EPIC-18)
   });
 
   it('ends on a TERMINATE_GAME byte', async () => {

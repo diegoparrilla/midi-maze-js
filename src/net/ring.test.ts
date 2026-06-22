@@ -2,6 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { MIDI_COUNT_PLAYERS, MIDI_MASTER_ELECT } from './protocol';
 import { ByteChannel, countMaster, countSlave, electMaster, waitForControl } from './ring';
 
+describe('ByteChannel.lastControlByte (interop telemetry, EPIC-18)', () => {
+  it('tracks the last control byte sent, ignoring joystick bytes', () => {
+    const ch = new ByteChannel(() => {});
+    expect(ch.lastControlByte).toBe(-1);
+    ch.sendByte(0x1f); // a joystick byte (< 0x80) — not a control byte
+    expect(ch.lastControlByte).toBe(-1);
+    ch.sendByte(MIDI_COUNT_PLAYERS); // 0x80
+    expect(ch.lastControlByte).toBe(MIDI_COUNT_PLAYERS);
+    ch.sendByte(0x01);
+    expect(ch.lastControlByte).toBe(MIDI_COUNT_PLAYERS); // unchanged by the joystick byte
+  });
+});
+
 describe('electMaster (dispatch.c DISPATCH_AUTOMATIC)', () => {
   it('emits 0x00 once and is master when it echoes back (ring of one / round trip)', async () => {
     const sent: number[] = [];
