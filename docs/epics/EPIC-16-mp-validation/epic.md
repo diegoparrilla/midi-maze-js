@@ -2,7 +2,7 @@
 id: EPIC-16
 iteration: 4
 title: Browser-vs-browser validation
-status: todo
+status: in-progress
 ---
 
 ## Goal
@@ -11,7 +11,11 @@ End-to-end multiplayer correctness; zero desync between browser nodes through th
 
 ## Stories
 
-Authored at the start of iteration 4 (just-in-time, per ITERATIONS.md).
+- STORY-01: Browser-vs-browser lock-step validation — 2- and 3-node `NetGame`s exchange
+  joysticks over a simulated orchestrator ring; all nodes stay byte-identical
+  (`worldChecksum`) every tick, and a master quit ends all nodes via the TERMINATE
+  two-step. `done`. (A live two-browser run through the real orchestrator is the remaining
+  manual check.)
 
 ## Notes
 
