@@ -26,6 +26,30 @@ npm run format   # prettier --write (code only; Markdown is hand-managed)
 The build output in `dist/` is a self-contained static page, launchable from any
 browser.
 
+## Deploying (GitHub Pages → midimaze.sidecartridge.com)
+
+Pushing to `main` builds the site and publishes `dist/` to GitHub Pages via
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). The custom domain is
+carried by [`public/CNAME`](public/CNAME) (`midimaze.sidecartridge.com`), which Vite
+copies into `dist/` so the domain survives each Actions deploy.
+
+DNS is already configured in Cloudflare: a **CNAME** record `midimaze` →
+`sidecartridge.github.io`, **proxy disabled (DNS only / grey cloud, no caching)** so
+GitHub serves and renews TLS directly.
+
+One-time GitHub setup (repo **Settings → Pages**):
+
+1. **Build and deployment → Source:** select **GitHub Actions** (not "Deploy from a
+   branch").
+2. Push to `main` (or run the **Deploy to GitHub Pages** workflow via *Actions →
+   Run workflow*). The first run publishes the site and registers the custom domain
+   from the `CNAME` file.
+3. **Custom domain** should show `midimaze.sidecartridge.com`; once DNS verifies, tick
+   **Enforce HTTPS**.
+
+Thereafter every push to `main` redeploys automatically. To verify locally:
+`npm run build && npm run preview`.
+
 ## Plan & status
 
 Work is organised as iterations → epics → stories → tasks under

@@ -18,8 +18,8 @@ engine can use — matching `loadmaze.c`, the format the game we are porting use
       1×1 checkerboard (`maze_obj.c`, `getMazeData`)
 - [x] Use `MIDIMAZE.MAZ` (+ `BIGSTART`, `HUDSON`) vendored in `assets-src/mazes/`
 - [x] Emit a canonical maze artifact (JSON grid + size) to `src/assets/generated/mazes/`
-- [ ] (Optional, later) `.MZE` (MIDI Maze 2) importer via `read_MZE.py` semantics
-      — separate format, not used by the original game
+- [x] (Optional, later) `.MZE` (MIDI Maze 2) importer via `read_MZE.py` semantics
+      — descoped: `.MZE` is MIDI Maze 2, a different format not used by this game (D-06)
 
 ## Acceptance
 
