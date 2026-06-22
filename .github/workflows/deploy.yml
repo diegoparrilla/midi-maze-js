@@ -1,29 +1,24 @@
-name: Deploy to GitHub Pages
+name: Deploy to S3
 
-# Build the Vite static site and publish dist/ to GitHub Pages on every push to main.
-# The custom domain (midimaze.sidecartridge.com) is carried by public/CNAME, which Vite
-# copies into dist/ so the domain survives each Actions deploy. One-time repo setup is in
-# README.md ("Deploying").
+# Build the Vite static site and publish dist/ to the S3 static-website bucket on every
+# push to main. The bucket is served over plain HTTP (S3 website endpoint, Cloudflare
+# DNS-only) on purpose: the page opens a ws:// socket to the md-MIDI2IP orchestrator, and a
+# browser refuses an insecure ws:// from an HTTPS page (mixed content). One-time bucket
+# setup is in README.md ("Deploying"). AWS auth mirrors md-appsbuilder (repo secrets).
 
 on:
   push:
     branches: [main]
   workflow_dispatch: {}
 
-# Allow the deploy job to publish to Pages; the OIDC token authenticates the deployment.
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-# One deploy at a time; let an in-flight run finish (don't cancel a live publish).
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: eu-west-3
+      BUCKET: midimaze.sidecartridge.com
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,17 +27,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      # Content-hashed assets are immutable → cache hard. index.html must never be served
+      # stale, so it is excluded here and re-uploaded with no-cache below.
+      - name: Sync assets to S3
+        run: >
+          aws s3 sync dist/ "s3://$BUCKET" --delete
+          --exclude index.html
+          --cache-control "public,max-age=31536000,immutable"
+      - name: Upload index.html (no-cache)
+        run: aws s3 cp dist/index.html "s3://$BUCKET/index.html" --cache-control "no-cache"
