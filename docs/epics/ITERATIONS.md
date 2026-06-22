@@ -102,3 +102,15 @@ phones in a room during a dry run of the talk.
 | EPIC-21 · Sound | Shot/hit sounds — synthesised per `sound.c` (YM2149) via WebAudio, or recreated SFX (not in the `.D8A`). |
 | EPIC-22 · Popchart, noteboard & end animations | Kill chart, score noteboard, win/lose tongue/blink animations. |
 | EPIC-23 · Presentation hardening | Multiple rooms, reconnect mid-game, performance on low-end phones. |
+
+## Iteration 7 — Documentation
+
+**Goal:** the README doubles as a user manual — how to build, how to deploy a built
+bundle, and a screenshot-illustrated walkthrough of the player experience.
+
+**Verify:** a newcomer can build and run it from the README, and the "How to play"
+walkthrough matches the current UI (screenshots regenerated from the built app).
+
+| Epic | Goal |
+| --- | --- |
+| EPIC-25 · User manual & documentation | README: build + deploy basics; screenshot-illustrated UX walkthrough; a reproducible screenshot-capture script. |
