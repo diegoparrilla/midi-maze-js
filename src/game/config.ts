@@ -38,7 +38,7 @@ export function defaultConfig(): GameConfig {
     teams: new Array<number>(PLAYER_MAX_COUNT).fill(0),
     drones: [0, 0, 0],
     mazeId: 'midimaze',
-    playerName: 'PLAYER',
+    playerName: 'Player #1',
   };
 }
 

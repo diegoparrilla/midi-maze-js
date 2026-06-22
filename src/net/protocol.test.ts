@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { defaultConfig } from '../game/config';
+import { defaultConfig, type GameConfig } from '../game/config';
 import { MAZE_MAX_SIZE, type Maze } from '../maze';
-import { decodeSendData, encodeSendData, type SendData } from './protocol';
+import { decodeData, encodeData, SEND_DATA_FIXED } from './protocol';
 
 const MAZE_BYTES = MAZE_MAX_SIZE * MAZE_MAX_SIZE;
 
@@ -13,7 +13,7 @@ function sampleMaze(): Maze {
   return { size: 14, data, defect: false };
 }
 
-function sample(): SendData {
+function sampleConfig(): GameConfig {
   const config = defaultConfig();
   config.reloadTime = 30;
   config.regenTime = 200;
@@ -23,34 +23,31 @@ function sample(): SendData {
   config.teamFlag = true;
   config.teams = Array.from({ length: 16 }, (_, i) => i % 4);
   config.friendlyFire = true;
-  return { names: ['ALICE', 'BO'], maze: sampleMaze(), config, seed: 0xbeef };
+  return config;
 }
 
-describe('SEND_DATA codec', () => {
-  it('round-trips names, maze, config and seed', () => {
-    const d = sample();
-    const decoded = decodeSendData(encodeSendData(d), d.names.length);
+describe('SEND_DATA data codec (no names — those are a ring exchange)', () => {
+  it('round-trips maze, config and seed', () => {
+    const maze = sampleMaze();
+    const config = sampleConfig();
+    const decoded = decodeData(encodeData(maze, config, 0xbeef));
 
-    expect(decoded.names).toEqual(['ALICE', 'BO']);
     expect(decoded.seed).toBe(0xbeef);
     expect(decoded.maze.size).toBe(14);
-    expect([...decoded.maze.data]).toEqual([...d.maze.data]); // incl. signed -1
+    expect([...decoded.maze.data]).toEqual([...maze.data]); // incl. signed -1
     expect(decoded.config.reloadTime).toBe(30);
     expect(decoded.config.regenTime).toBe(200);
     expect(decoded.config.reviveTime).toBe(100);
     expect(decoded.config.reviveLives).toBe(3);
     expect(decoded.config.drones).toEqual([2, 1, 4]);
     expect(decoded.config.teamFlag).toBe(true);
-    expect(decoded.config.teams).toEqual(d.config.teams);
+    expect(decoded.config.teams).toEqual(config.teams);
     expect(decoded.config.friendlyFire).toBe(true);
   });
 
-  it('lays bytes out in the documented order (offset fixture)', () => {
-    const d = sample();
-    const b = encodeSendData(d);
-    // names: "ALICE\0BO\0" = 6 + 3 = 9 bytes
-    expect([...b.slice(0, 9)]).toEqual([65, 76, 73, 67, 69, 0, 66, 79, 0]);
-    let p = 9;
+  it('lays bytes out in the documented order', () => {
+    const b = encodeData(sampleMaze(), sampleConfig(), 0xbeef);
+    let p = 0;
     expect(b[p++]).toBe(14); // maze-size
     expect(b[p++]).toBe(30); // reload
     expect(b[p++]).toBe(200); // regen
@@ -64,10 +61,6 @@ describe('SEND_DATA codec', () => {
     expect(b[p++]).toBe(1); // friendly-fire
     expect([b[p++], b[p++]]).toEqual([0xbe, 0xef]); // seed hi/lo
     expect(p).toBe(b.length);
-  });
-
-  it('preserves the full 4096-byte maze grid', () => {
-    const d = sample();
-    expect(encodeSendData(d).length).toBe(9 + 8 + MAZE_BYTES + 1 + 16 + 1 + 2);
+    expect(b.length).toBe(SEND_DATA_FIXED);
   });
 });

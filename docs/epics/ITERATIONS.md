@@ -72,6 +72,7 @@ late polish. (EPIC numbers are global, so the out-of-order number here is expect
 | EPIC-13 · Protocol: election, count, seed, send-data | Master election (`0x00`; reply→master), player count (`0x80`), and the `MIDI_SEND_DATA` (0x83) block (names, maze grid, timings, teams, RNG seed). |
 | EPIC-14 · Per-tick ring loop & lock-step pump | The `maingame.c` send/receive ring loop over the async transport; control bytes (`0x81–0x86`). |
 | EPIC-15 · Browser master mode | Menus/maze-select/start driving the ring as master; slave follows. |
+| EPIC-24 · Network entry flow & status | Mode menu (solo/network); Server/Room connect screen with a persistent idle link + net-status icon; Host/Join chosen at Start. Restructures the EPIC-15 entry UI. |
 | EPIC-16 · Browser-vs-browser validation | End-to-end multiplayer correctness; no desync between browsers. |
 
 ## Iteration 5 — Wire-faithful interop with real hardware

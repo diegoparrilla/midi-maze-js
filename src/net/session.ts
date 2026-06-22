@@ -1,10 +1,10 @@
-// Open a networked session: connect the transport, run the setup handshake in the
-// chosen role, and hand back the live channel + shared game definition. DOM-free, so
-// the host path is unit-testable with a fake socket (EPIC-15 STORY-02).
-import type { GameConfig } from '../game/config';
+// Network session lifecycle (EPIC-24 STORY-02). The connection is opened *early* and
+// held idle — connected, auto-reconnecting on drop, but sending no handshake/game
+// bytes until the player picks a role at Start. The handshake itself is `runSetup`
+// (EPIC-13) run later over this same channel. DOM-free, so it is unit-testable with a
+// fake socket.
 import type { NetConfig } from './netconfig';
 import { ByteChannel } from './ring';
-import { runSetup, type SetupResult } from './setup';
 import {
   type SocketFactory,
   Transport,
@@ -12,52 +12,43 @@ import {
   type TransportStatus,
 } from './transport';
 
-export interface Session {
+/** A live, idle link to the orchestrator: a connected transport + its byte channel. */
+export interface IdleLink {
   transport: Transport;
   channel: ByteChannel;
-  setup: SetupResult;
+  /** Resolves on the first successful open (drive the connect screen off this). */
+  opened: Promise<void>;
 }
 
-export interface ConnectOptions {
-  /** Status callback: connecting / open (then the handshake runs) / closed. */
+export interface IdleOptions {
+  /** Status callback: connecting / open / reconnecting / closed (drives the icon). */
   onStatus?: (status: TransportStatus) => void;
-  connectTimeoutMs?: number;
-  handshakeTimeoutMs?: number;
   /** Injectable socket factory (tests); defaults to the native WebSocket. */
   createSocket?: SocketFactory;
 }
 
 /**
- * Connect + handshake. The host authors the shared block (its `config`, the selected
- * maze, and `seed`); a join adopts the host's. Resolves once the world is agreed, or
- * rejects on a connect/handshake failure (the ring "boo-boo") — no reconnect during
- * setup so a failure surfaces cleanly. Membership is frozen at this point (C-04).
+ * Open the orchestrator link and keep it alive. Matches the original: nodes sit on the
+ * ring before the master triggers COUNT/SEND-DATA/START. Auto-reconnects on drop (the
+ * net-status icon shows the gap); inbound bytes simply buffer in the channel until the
+ * handshake arms over it. `opened` resolves on first connect — close the transport to
+ * stop reconnecting.
  */
-export async function connectSession(
-  net: NetConfig,
-  config: GameConfig,
-  seed: number,
-  opts: ConnectOptions = {},
-): Promise<Session> {
-  const role = net.mode === 'host' ? 'host' : 'join';
-
-  let ch!: ByteChannel;
+export function connectIdle(net: NetConfig, opts: IdleOptions = {}): IdleLink {
   let resolveOpen!: () => void;
-  let rejectOpen!: (e: Error) => void;
-  const opened = new Promise<void>((res, rej) => {
+  const opened = new Promise<void>((res) => {
     resolveOpen = res;
-    rejectOpen = rej;
   });
 
+  let ch!: ByteChannel;
   const tOpts: TransportOptions = {
     url: net.url,
     room: net.room, // empty string → default room (buildUrl omits the query)
-    reconnect: false, // a drop during setup is a clean failure, not a retry
+    reconnect: true, // hold the link idle; recover transparently from drops
     onBytes: (b) => ch.push(b),
     onStatus: (s) => {
       opts.onStatus?.(s);
       if (s === 'open') resolveOpen();
-      else if (s === 'closed') rejectOpen(new Error('connection closed'));
     },
   };
   if (opts.createSocket) tOpts.createSocket = opts.createSocket;
@@ -65,16 +56,5 @@ export async function connectSession(
   ch = new ByteChannel((bytes) => transport.send(bytes));
   transport.connect();
 
-  const timer = setTimeout(
-    () => rejectOpen(new Error('connect timeout')),
-    opts.connectTimeoutMs ?? 5000,
-  );
-  try {
-    await opened;
-  } finally {
-    clearTimeout(timer);
-  }
-
-  const setup = await runSetup(ch, role, config, seed, opts.handshakeTimeoutMs);
-  return { transport, channel: ch, setup };
+  return { transport, channel: ch, opened };
 }

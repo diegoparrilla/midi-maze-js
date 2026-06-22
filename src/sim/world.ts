@@ -35,6 +35,8 @@ export class World {
   /** Number of human/network players; drones occupy slots [machinesOnline, count). */
   machinesOnline = 0;
   weDontHaveAWinner = 0;
+  /** Human player names, indexed by player number (agreed by the name ring exchange). */
+  names: string[] = [];
   /** Rotating start index for the move loop (maingame.c), so player 0 isn't always first. */
   playerIndex = 0;
   objektAnz = 0;

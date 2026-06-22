@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultNetConfig, defaultOrchestratorUrl, isValidNet } from './netconfig';
+import { defaultNetConfig, defaultOrchestratorUrl, isValidNet, isValidUrl } from './netconfig';
 
 describe('NetConfig', () => {
   it('defaults to solo with the orchestrator URL', () => {
@@ -19,5 +19,12 @@ describe('NetConfig', () => {
     expect(isValidNet({ mode: 'join', url: 'wss://h/', room: 'ABC' })).toBe(true);
     expect(isValidNet({ mode: 'host', url: '', room: '' })).toBe(false);
     expect(isValidNet({ mode: 'join', url: 'http://nope', room: '' })).toBe(false);
+  });
+
+  it('isValidUrl accepts ws/wss and rejects anything else', () => {
+    expect(isValidUrl('ws://host:5006/')).toBe(true);
+    expect(isValidUrl('  wss://host/  ')).toBe(true);
+    expect(isValidUrl('http://host')).toBe(false);
+    expect(isValidUrl('')).toBe(false);
   });
 });
