@@ -27,6 +27,7 @@ import {
 import { type NetEnd, NetGame } from './net/netgame';
 import { MIDI_NAME_DIALOG, MIDI_TERMINATE_GAME } from './net/protocol';
 import { countMaster, type CountResult, electMaster } from './net/ring';
+import { fetchRooms } from './net/rooms';
 import { connectIdle, type IdleLink } from './net/session';
 import {
   exchangeNames,
@@ -89,6 +90,7 @@ const netStatusEl = $<HTMLElement>('#net-status');
 const conUrl = $<HTMLInputElement>('#con-url');
 const conRoom = $<HTMLInputElement>('#con-room');
 const conMsg = $<HTMLElement>('#con-msg');
+const conRoomList = $<HTMLUListElement>('#con-rooms');
 const conConnect = $<HTMLButtonElement>('#con-connect');
 const lobbyStart = $<HTMLButtonElement>('#lobby-start');
 const lobbyTitle = $<HTMLElement>('#lobby-title');
@@ -597,8 +599,15 @@ async function runNetSession(role: 'host' | 'join'): Promise<void> {
     netTelemetry.timedOut = true;
   }
 
-  // Show the result briefly (both nodes see who won), unless we quit on purpose.
-  if (!quitRequested) {
+  // A mid-game drop breaks the lock-step ring (C-01) — don't show a bogus "game over" with
+  // no winner. Surface the drop; the held link auto-reconnects (its status icon already
+  // blinks red), and we return to the elected idle state below for the next game.
+  if (!quitRequested && end === 'timeout') {
+    setStatus(`${roleLabel} · connection lost — reconnecting…`);
+    drawDashboard(); // clear the now-stale 3D view
+    await delay(1500);
+  } else if (!quitRequested) {
+    // Show the result briefly (both nodes see who won).
     flow.winner = end === 'winner' ? findWinner(world) : -1;
     flow.phase = 'gameover';
     for (let t = 0; t < GAMEOVER_TICKS; t++) {
@@ -983,10 +992,47 @@ function wireConnectScreen(): void {
     netConfig.room = conRoom.value.trim().toUpperCase();
   });
   conConnect.addEventListener('click', () => void doConnect());
+  $<HTMLButtonElement>('#con-rooms-btn').addEventListener('click', () => void listRooms());
   $<HTMLButtonElement>('#con-back').addEventListener('click', goMode);
   $<HTMLButtonElement>('#role-modal-ok').addEventListener('click', () => {
     roleModal.hidden = true;
   });
+}
+
+/** Fetch the orchestrator's active rooms (GET /rooms) and list them; clicking one fills
+ *  the Room field. Best-effort — an orchestrator without the endpoint shows nothing. */
+async function listRooms(): Promise<void> {
+  if (!isValidUrl(netConfig.url)) {
+    conMsg.textContent = 'enter a ws:// or wss:// server';
+    return;
+  }
+  conMsg.textContent = 'listing rooms…';
+  const rooms = await fetchRooms(netConfig.url);
+  conRoomList.innerHTML = '';
+  if (!rooms) {
+    conMsg.textContent = 'rooms unavailable (using default room is fine)';
+    conRoomList.hidden = true;
+    return;
+  }
+  if (rooms.length === 0) {
+    conMsg.textContent = 'no active rooms — connect to start one';
+    conRoomList.hidden = true;
+    return;
+  }
+  conMsg.textContent = '';
+  for (const r of rooms) {
+    const li = document.createElement('li');
+    const cap = r.cap ? `/${r.cap}` : '';
+    const phase = r.phase ? ` · ${r.phase}` : '';
+    li.textContent = `${r.room || '(default)'} — ${r.players}${cap} player${r.players === 1 ? '' : 's'}${phase}`;
+    li.addEventListener('click', () => {
+      conRoom.value = r.room;
+      netConfig.room = r.room.toUpperCase();
+      conRoomList.hidden = true;
+    });
+    conRoomList.appendChild(li);
+  }
+  conRoomList.hidden = false;
 }
 
 /** Open the orchestrator link and hold it idle; on success, run the master election. */
