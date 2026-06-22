@@ -60,6 +60,11 @@ export interface NetGameOptions {
 export class NetGame {
   readonly world: World;
   tick = 0;
+  /** The joystick ring table from the most recent tick (for interop telemetry). */
+  lastJoy: number[] = [];
+  /** Wall-clock ms the most recent ring exchange took — how close a real ring runs to
+   *  `TICK_TIMEOUT_MS` (C-01); surfaced in the interop overlay (EPIC-18). */
+  lastTickMs = 0;
   private readonly o: NetGameOptions;
 
   constructor(opts: NetGameOptions) {
@@ -70,6 +75,7 @@ export class NetGame {
   /** Run one tick. Returns the end reason, or null to keep going. */
   async runTick(ch: ByteChannel): Promise<NetEnd | null> {
     let joy: number[];
+    const t0 = performance.now();
     try {
       joy = await exchangeJoysticks(
         ch,
@@ -81,6 +87,8 @@ export class NetGame {
     } catch {
       return 'timeout'; // a dropped/late byte ends the ring cleanly (no desync)
     }
+    this.lastTickMs = performance.now() - t0;
+    this.lastJoy = joy;
 
     // The master injects MIDI_TERMINATE_GAME at slot 0 to suspend the game. The original
     // then does a second step (maingame.c:433): the master sends a confirm byte round the

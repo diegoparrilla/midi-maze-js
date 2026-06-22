@@ -80,16 +80,36 @@ export async function exchangeNames(
  * Send a bulk block to the ring without overrunning a real ST's MIDI port. MIDI is
  * 31250 baud ≈ 3125 bytes/s, so dumping 4 KB at once overflows the gateway/ST buffer and
  * loses bytes. Like `send_datas` (midicomm.c, the 50-byte maze buffer): keep at most
- * `SEND_WINDOW` bytes in flight and read each echo, which self-paces the sender to the
+ * `sendWindow` bytes in flight and read each echo, which self-paces the sender to the
  * ring's actual speed (MIDI-limited when a real ST is on the ring, fast browser↔browser).
+ *
+ * The window is the burst that goes out *before* the first echo returns, so it must not
+ * exceed the receiver's input-buffer depth. Hatari's emulated MIDI buffers generously
+ * (50 is fine); a real ST's ACIA has no receive FIFO, so the sidecartridge bridge's
+ * buffer is the real limit and is unknown until tested — hence `sendWindow` is tunable
+ * (EPIC-18: drop it via `?sendWindow=N` if the handshake stalls on the real bridge).
  */
-const SEND_WINDOW = 50;
+export const DEFAULT_SEND_WINDOW = 50;
+let sendWindow = DEFAULT_SEND_WINDOW;
+
+/** Read the active windowed-echo burst size (for telemetry). */
+export function getSendWindow(): number {
+  return sendWindow;
+}
+
+/** Override the windowed-echo burst size (1..512). Lower it for a real ST bridge whose
+ *  MIDI input buffer is shallower than the default. */
+export function setSendWindow(n: number): void {
+  if (Number.isFinite(n) && n >= 1) sendWindow = Math.min(512, Math.floor(n));
+}
+
 async function sendPaced(ch: ByteChannel, bytes: Uint8Array, timeoutMs?: number): Promise<void> {
+  const w = sendWindow;
   for (let i = 0; i < bytes.length; i++) {
     ch.sendByte(bytes[i]!);
-    if (i >= SEND_WINDOW) await ch.readByte(timeoutMs); // echo lags by the window
+    if (i >= w) await ch.readByte(timeoutMs); // echo lags by the window
   }
-  for (let i = 0; i < Math.min(SEND_WINDOW, bytes.length); i++) await ch.readByte(timeoutMs); // drain
+  for (let i = 0; i < Math.min(w, bytes.length); i++) await ch.readByte(timeoutMs); // drain
 }
 
 /**

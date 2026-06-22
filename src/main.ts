@@ -23,16 +23,18 @@ import {
   isValidUrl,
   type NetConfig,
 } from './net/netconfig';
-import { type NetEnd, NetGame } from './net/netgame';
+import { type NetEnd, NetGame, TICK_TIMEOUT_MS } from './net/netgame';
 import { MIDI_NAME_DIALOG, MIDI_TERMINATE_GAME } from './net/protocol';
 import { countMaster, type CountResult, electMaster } from './net/ring';
 import { connectIdle, type IdleLink } from './net/session';
 import {
   exchangeNames,
+  getSendWindow,
   hostCount,
   hostStart,
   nameBarrier,
   runSetup,
+  setSendWindow,
   type SetupResult,
 } from './net/setup';
 import type { TransportStatus } from './net/transport';
@@ -48,6 +50,7 @@ import {
   drawWinLashes,
 } from './render/shapes';
 import { drawView3D } from './render/view3d';
+import { worldChecksum } from './sim/checksum';
 import { sfx } from './sound/sfx';
 import { detectSfx } from './sound/triggers';
 import { assignDroneTypes, droneSetup } from './sim/drone';
@@ -126,6 +129,14 @@ function newWorld(cfg: GameConfig): World {
 let world = newWorld(config);
 const killLog = new KillLog(); // the camera player's kills, for the pop chart (EPIC-22)
 let prevReload = 0; // camera player's reload last tick, for shot-fired edge detection (EPIC-21)
+// Live interop telemetry for the debug overlay (EPIC-18): the last joystick ring table,
+// tick, and whether the ring timed out — to localize a desync against a real ST bridge.
+const netTelemetry = { tick: 0, joy: [] as number[], timedOut: false, tickMs: 0 };
+
+// EPIC-18: let a real-ST-bridge bring-up drop the windowed-echo burst size without a
+// rebuild (`?sendWindow=N`) if the handshake stalls on the bridge's shallow MIDI buffer.
+const sendWindowParam = Number(new URLSearchParams(location.search).get('sendWindow'));
+if (sendWindowParam) setSendWindow(sendWindowParam);
 
 /** Play the local shot/hit SFX for the camera player after the world advanced. */
 function playSfx(): void {
@@ -364,6 +375,20 @@ function buildDebugInfo(): string {
       `  [${i}] ${live} cell(${p.ply_x >> 7},${p.ply_y >> 7}) dir=${p.ply_dir} score=${p.ply_score} lives=${p.ply_lives}  ${who}`,
     );
   }
+  L.push('');
+  L.push('--- interop (live) ---');
+  const hex = (b: number): string => (b < 0 ? '--' : b.toString(16).padStart(2, '0'));
+  L.push(`checksum     : ${worldChecksum(w)}`); // every node must match each tick (C-02)
+  if (netActive || idle) {
+    const ctrl = idle ? idle.channel.lastControlByte : -1;
+    const rtt = Math.round(netTelemetry.tickMs);
+    const nearLimit = netTelemetry.tickMs > TICK_TIMEOUT_MS * 0.66; // headroom warning (C-01)
+    L.push(`tick         : ${netTelemetry.tick}${netTelemetry.timedOut ? '  RING TIMEOUT' : ''}`);
+    L.push(`ring rtt     : ${rtt}ms / ${TICK_TIMEOUT_MS}ms${nearLimit ? '  NEAR LIMIT' : ''}`);
+    L.push(`send window  : ${getSendWindow()}`);
+    L.push(`last ctrl tx : 0x${hex(ctrl)}`);
+    L.push(`joystick ring: [${netTelemetry.joy.map(hex).join(' ')}]`);
+  }
   return L.join('\n');
 }
 
@@ -497,6 +522,10 @@ async function runNetSession(role: 'host' | 'join'): Promise<void> {
   cameraIndex = setup.ownNumber;
   killLog.reset(); // clear the kills window for the new game (maingame.c:178)
   prevReload = 0;
+  netTelemetry.tick = 0;
+  netTelemetry.joy = [];
+  netTelemetry.timedOut = false;
+  netTelemetry.tickMs = 0;
 
   // Map preview: a fixed 5s look at the start map (maingame.c:218), synchronised by
   // the handshake completing on every node.
@@ -518,6 +547,9 @@ async function runNetSession(role: 'host' | 'join'): Promise<void> {
       const p = world.players[cameraIndex]!;
       killLog.update(p.ply_score, p.ply_looser); // record kills for the pop chart
       playSfx();
+      netTelemetry.tick = game.tick;
+      netTelemetry.joy = game.lastJoy;
+      netTelemetry.tickMs = game.lastTickMs;
       renderWorld();
       setStatus(`${roleLabel} · field (${p.ply_x >> 7},${p.ply_y >> 7}) · score ${p.ply_score}/10`);
     },
@@ -538,6 +570,7 @@ async function runNetSession(role: 'host' | 'join'): Promise<void> {
     } while (!end);
   } catch {
     end = 'timeout';
+    netTelemetry.timedOut = true;
   }
 
   // Show the result briefly (both nodes see who won), unless we quit on purpose.
