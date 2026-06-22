@@ -14,6 +14,7 @@ import {
   totalDrones,
 } from './game/config';
 import { findWinner, GameFlow, GAMEOVER_TICKS } from './game/flow';
+import { KillLog } from './game/kills';
 import { Input, type Control } from './game/input';
 import { loadMazeById, MAZE_OPTIONS } from './game/mazes';
 import {
@@ -35,7 +36,7 @@ import {
   type SetupResult,
 } from './net/setup';
 import type { TransportStatus } from './net/transport';
-import { drawCrosshair, drawHappyIndicator, drawScoreboard } from './render/hud';
+import { drawCrosshair, drawHappyIndicator, drawKillsWindow, drawScoreboard } from './render/hud';
 import { drawMap2D } from './render/map2d';
 import { VIEW_SCREEN_X, VIEW_SCREEN_Y, VIEW_WIDTH } from './render/projection';
 import {
@@ -119,6 +120,7 @@ function newWorld(cfg: GameConfig): World {
 }
 
 let world = newWorld(config);
+const killLog = new KillLog(); // the camera player's kills, for the pop chart (EPIC-22)
 const flow = new GameFlow();
 const input = new Input();
 let mapMode = false;
@@ -425,6 +427,7 @@ function startSolo(): void {
   cameraIndex = 0;
   setNetStatus(null);
   world = newWorld(config);
+  killLog.reset();
   flow.startGame();
 }
 
@@ -476,6 +479,7 @@ async function runNetSession(role: 'host' | 'join'): Promise<void> {
   hideOverlays();
   world = buildNetWorld(setup);
   cameraIndex = setup.ownNumber;
+  killLog.reset(); // clear the kills window for the new game (maingame.c:178)
 
   // Map preview: a fixed 5s look at the start map (maingame.c:218), synchronised by
   // the handshake completing on every node.
@@ -494,8 +498,9 @@ async function runNetSession(role: 'host' | 'join'): Promise<void> {
     machinesOnline: setup.machinesOnline,
     localInput: () => (quitRequested ? MIDI_TERMINATE_GAME : input.joyByte()),
     onTick: () => {
-      renderWorld();
       const p = world.players[cameraIndex]!;
+      killLog.update(p.ply_score, p.ply_looser); // record kills for the pop chart
+      renderWorld();
       setStatus(`${roleLabel} · field (${p.ply_x >> 7},${p.ply_y >> 7}) · score ${p.ply_score}/10`);
     },
   });
@@ -1018,6 +1023,7 @@ function drawGameOver(): void {
     drawShape(ctx!, 48, BODY_SHAPE_MAX_SIZE, BODY_SHAPE_FRONT_VIEW, BODY_SHAPE_NO_SHADOW, w);
     viewText(w === cameraIndex ? 'You win!' : `${playerName(w)} wins!`, 14);
   }
+  drawKillsWindow(ctx!, killLog.victims); // the kills persist through the end screen
   if (flow.canRestart()) viewText('press any key', 92);
 }
 
@@ -1031,6 +1037,7 @@ function renderWorld(): void {
     drawMap2D(ctx!, world);
     drawHappyIndicator(ctx!, world, cameraIndex);
     drawScoreboard(ctx!, world);
+    drawKillsWindow(ctx!, killLog.victims);
   } else {
     drawDashboard();
     if (p.ply_lives > 0) {
@@ -1045,6 +1052,7 @@ function renderWorld(): void {
     }
     drawHappyIndicator(ctx!, world, cameraIndex);
     drawScoreboard(ctx!, world);
+    drawKillsWindow(ctx!, killLog.victims);
   }
 }
 
@@ -1084,6 +1092,8 @@ function frame(): void {
     const joyTable = [input.joyByte(), 0, 0, 0]; // player 0 is the camera; drones filled by step()
     const dronesActive = world.playerAndDroneCount > world.machinesOnline ? 1 : 0;
     step(world, joyTable, dronesActive);
+    const me = world.players[cameraIndex]!;
+    killLog.update(me.ply_score, me.ply_looser); // record kills for the pop chart
   }
   renderWorld();
 

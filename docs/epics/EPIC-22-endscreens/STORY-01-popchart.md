@@ -2,7 +2,7 @@
 id: STORY-01
 epic: EPIC-22
 title: Kills window (pop chart)
-status: todo
+status: done
 ---
 
 ## Goal
@@ -28,15 +28,15 @@ Faithful to `popchart.c` / `add_one_smily`.
 
 ## Tasks
 
-- [ ] Track kills in order: the local player's `ply_score` is the count; the victim is
+- [x] Track kills in order: the local player's `ply_score` is the count; the victim is
       `ply_looser` at the moment the score increments (`add_one_smily(currentScore,
       ply_looser)`, `maingame.c:339`). Keep an ordered `kills: number[]` (killed player
       indices) for the camera player, reset on a new game. Pure + unit-tested.
-- [ ] An arbitrary-position face blit: `drawShape` is locked to the 3D-view horizon, so
+- [x] An arbitrary-position face blit: `drawShape` is locked to the 3D-view horizon, so
       add a helper that blits the `BALL`/`FACE` shape tables (size 16) via `blitMask` at
       a given `(x, y)` in a player's colours.
-- [ ] The red buster overlay: extract `smileybuster_img` (or draw two red diagonals).
-- [ ] `drawKillsWindow(ctx, world, cameraIndex, kills)` in `render/hud.ts`: draw each
+- [x] The red buster overlay: extract `smileybuster_img` (or draw two red diagonals).
+- [x] `drawKillsWindow(ctx, world, cameraIndex, kills)` in `render/hud.ts`: draw each
       kill's face at the two-row layout, offset to the kills-window origin; call it from
       the main render path (next to `drawScoreboard` / `drawHappyIndicator`).
 
