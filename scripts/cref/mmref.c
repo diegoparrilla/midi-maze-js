@@ -5530,9 +5530,18 @@ int main(void) {
   for (int i = 0; i < 65; i++) printf("%s%d", i ? "," : "", sine_table[i]);
   printf("],\n");
 
-  short A[] = {7, -7, 7, -7, 255, 256, 32767, -32768, 5, 100, -100, 181};
-  short B[] = {3, 3, -3, -3, 255, 181, 2, 1, 5, 100, 100, 256};
-  short C[] = {2, 2, 2, 2, 256, 256, 3, 1, 256, 256, 256, 256};
+  /* tail cases (index 12+) lock down 16-bit result overflow and cross-quadrant
+   * truncation-toward-zero — fixed-point hazards the random fuzz won't reliably hit
+   * (EPIC-17 STORY-02, C-02). The result is a `short`, so (a*b)/c wraps mod 2^16. */
+  short A[] = {7,     -7,     7,      -7,    255, 256, 32767, -32768,
+               5,     100,    -100,   181,   32767, 32767, -32768, -32768,
+               32767, -5,     5,      -100,  200};
+  short B[] = {3,     3,      -3,     -3,    255, 181, 2,     1,
+               5,     100,    100,    256,   32767, 32767, 32767, -32768,
+               -32767, 3,     -3,     -100,  200};
+  short C[] = {2,     2,      2,      2,     256, 256, 3,     1,
+               256,   256,    256,    256,   1,     2,     1,      1,
+               3,     2,      2,      7,     256};
   int n = sizeof(A) / sizeof(A[0]);
   printf("  \"mulsDivs\": [");
   for (int i = 0; i < n; i++)
@@ -5789,6 +5798,34 @@ int main(void) {
   _random_seed = 12345;
   printf("    \"rnd256\": [");
   for (int i = 0; i < 8; i++) printf("%s%d", i ? "," : "", _rnd(256));
+  printf("],\n");
+  /* long run: catch any 16-bit-truncation drift over many steps (EPIC-17, C-02) */
+  printf("    \"randomLong\": [");
+  {
+    int idx[] = {99, 999, 9999, 49999};
+    int j = 0, last = 0;
+    _random_seed = 12345;
+    for (int i = 0; i <= 49999; i++) {
+      last = _random();
+      if (j < 4 && i == idx[j]) {
+        printf("%s%d", j ? "," : "", last);
+        j++;
+      }
+    }
+  }
+  printf("],\n");
+  /* _rnd across maxVals that exercise different rejection-sampling thresholds */
+  printf("    \"rndByMax\": [");
+  {
+    int maxes[] = {1, 3, 5, 7, 100, 200, 255, 256};
+    int nm = sizeof(maxes) / sizeof(maxes[0]);
+    for (int m = 0; m < nm; m++) {
+      _random_seed = 12345;
+      printf("%s{\"max\":%d,\"seq\":[", m ? "," : "", maxes[m]);
+      for (int i = 0; i < 16; i++) printf("%s%d", i ? "," : "", _rnd(maxes[m]));
+      printf("]}");
+    }
+  }
   printf("]\n  }\n}\n");
   return 0;
 }
