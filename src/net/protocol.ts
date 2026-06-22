@@ -18,14 +18,13 @@ export const MIDI_NAME_DIALOG = 0x86;
 
 const MAZE_BYTES = MAZE_MAX_SIZE * MAZE_MAX_SIZE; // 4096
 
-/** Fixed tail after the zero-terminated name(s): maze-size + reload + regen + revive
- *  + lives + 3 drones + 4096 maze + team-flag + 16 teams + friendly-fire + seed hi/lo. */
-export const SEND_DATA_FIXED = 1 + 1 + 1 + 1 + 1 + 3 + MAZE_BYTES + 1 + PLAYER_MAX_COUNT + 1 + 2; // 4123
+/** Fixed SEND_DATA data block (no names — those are a separate ring exchange,
+ *  `midi_send_playernames`): maze-size + reload + regen + revive + lives + 3 drones +
+ *  4096 maze + team-flag + 16 teams + friendly-fire + seed hi/lo. */
+export const SEND_DATA_FIXED = 1 + 1 + 1 + 1 + 1 + 3 + MAZE_BYTES + 1 + PLAYER_MAX_COUNT + 1 + 2;
 
-/** The shared game definition carried by a MIDI_SEND_DATA block. */
-export interface SendData {
-  /** One name per human player, in ring order. */
-  names: string[];
+/** The shared game definition carried by the MIDI_SEND_DATA data block (no names). */
+export interface GameData {
   /** The 64×64 (4096-byte) maze grid. */
   maze: Maze;
   /** Game-rule config (timings, lives, friendly fire, team flag + teams, drones). */
@@ -35,47 +34,31 @@ export interface SendData {
 }
 
 /**
- * Encode a SEND_DATA block, byte-exact to MIDICommunication.md: each name
- * zero-terminated, then maze-size, reload, regen, revive, lives, 3 drone counts,
- * 4096 maze bytes, team-flag, 16 team bytes, friendly-fire, seed hi/lo. The leading
- * MIDI_SEND_DATA (0x83) marker itself is part of the handshake (STORY-03), not here.
+ * Encode the SEND_DATA data block: maze-size, reload, regen, revive, lives, 3 drone
+ * counts, 4096 maze bytes, team-flag, 16 team bytes, friendly-fire, seed hi/lo. Player
+ * names are NOT here — they are exchanged as a ring (`midi_send_playernames`) so every
+ * node contributes its own. (We keep the seed in the block; the real ST shares it
+ * separately at game-start — reconciled in EPIC-18.)
  */
-export function encodeSendData(d: SendData): Uint8Array {
+export function encodeData(maze: Maze, config: GameConfig, seed: number): Uint8Array {
   const out: number[] = [];
-  for (const name of d.names) {
-    for (let i = 0; i < name.length; i++) out.push(name.charCodeAt(i) & 0xff);
-    out.push(0x00); // zero terminator
-  }
-  out.push(d.maze.size & 0xff);
-  out.push(d.config.reloadTime & 0xff);
-  out.push(d.config.regenTime & 0xff);
-  out.push(d.config.reviveTime & 0xff);
-  out.push(d.config.reviveLives & 0xff);
-  out.push(d.config.drones[0] & 0xff, d.config.drones[1] & 0xff, d.config.drones[2] & 0xff);
-  for (let i = 0; i < MAZE_BYTES; i++) out.push(d.maze.data[i]! & 0xff);
-  out.push(d.config.teamFlag ? 1 : 0);
-  for (let i = 0; i < PLAYER_MAX_COUNT; i++) out.push((d.config.teams[i] ?? 0) & 0xff);
-  out.push(d.config.friendlyFire ? 1 : 0);
-  out.push((d.seed >> 8) & 0xff, d.seed & 0xff);
+  out.push(maze.size & 0xff);
+  out.push(config.reloadTime & 0xff);
+  out.push(config.regenTime & 0xff);
+  out.push(config.reviveTime & 0xff);
+  out.push(config.reviveLives & 0xff);
+  out.push(config.drones[0]! & 0xff, config.drones[1]! & 0xff, config.drones[2]! & 0xff);
+  for (let i = 0; i < MAZE_BYTES; i++) out.push(maze.data[i]! & 0xff);
+  out.push(config.teamFlag ? 1 : 0);
+  for (let i = 0; i < PLAYER_MAX_COUNT; i++) out.push((config.teams[i] ?? 0) & 0xff);
+  out.push(config.friendlyFire ? 1 : 0);
+  out.push((seed >> 8) & 0xff, seed & 0xff);
   return Uint8Array.from(out);
 }
 
-/**
- * Decode a SEND_DATA block. `nameCount` names (known from COUNT-PLAYERS) are read
- * first, then the fixed tail. The returned config carries the game-rule fields; the
- * maze grid is authoritative (mazeId is left empty — the wire carries the grid, not
- * an id).
- */
-export function decodeSendData(bytes: Uint8Array, nameCount: number): SendData {
+/** Decode the SEND_DATA data block. The maze grid is authoritative (`mazeId` left empty). */
+export function decodeData(bytes: Uint8Array): GameData {
   let p = 0;
-  const names: string[] = [];
-  for (let n = 0; n < nameCount; n++) {
-    let s = '';
-    while (p < bytes.length && bytes[p] !== 0x00) s += String.fromCharCode(bytes[p++]!);
-    p++; // skip the terminator
-    names.push(s);
-  }
-
   const mazeSize = bytes[p++]!;
   const config = defaultConfig();
   config.mazeId = '';
@@ -95,5 +78,5 @@ export function decodeSendData(bytes: Uint8Array, nameCount: number): SendData {
   config.friendlyFire = bytes[p++] !== 0;
   const seed = ((bytes[p++]! << 8) | bytes[p++]!) & 0xffff;
 
-  return { names, maze, config, seed };
+  return { maze, config, seed };
 }

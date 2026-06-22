@@ -32,6 +32,15 @@
         <button id="menu-btn" aria-label="menu">≡</button>
       </div>
 
+      <!-- Network link status (EPIC-24): shown only in network mode, beside fullscreen -->
+      <span id="net-status" hidden aria-label="network status" title="network"></span>
+
+      <!-- Play button (EPIC-24): in the "ready" screen, open the preferences / start
+           (the master's MAZE→Play; replaces the GEM menu). 'P' does the same. -->
+      <button id="play-btn" hidden aria-label="play" title="Play (P)">▶ PLAY</button>
+      <!-- Names (EPIC-24): master prompts everyone to (re)enter their name. 'N' too. -->
+      <button id="names-btn" hidden aria-label="names" title="Names (N)">NAMES</button>
+
       <button id="fullscreen-btn" aria-label="fullscreen" title="Fullscreen (F)">⛶</button>
     </main>
 
@@ -51,8 +60,94 @@
         <div class="gem-title"><span>MENU</span></div>
         <div class="gem-menu-body">
           <button class="gem-btn" data-action="fullscreen">Fullscreen</button>
-          <button class="gem-btn" data-action="restart">Quit to lobby</button>
+          <button class="gem-btn" data-action="restart">Quit game</button>
           <button class="gem-btn gem-default" data-action="close">Resume</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Role announcement (EPIC-24): a short modal stating MASTER / SLAVE after the
+         election, like the original's "This is the MASTER machine." alert. -->
+    <div id="role-modal" hidden>
+      <div class="gem-dialog gem-menu" role="dialog" aria-label="Network role">
+        <div class="gem-title"><span>NETWORK</span></div>
+        <div class="gem-menu-body">
+          <p id="role-modal-text" class="wait-msg"></p>
+          <button id="role-modal-ok" class="gem-btn gem-default">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Name dialog (EPIC-24): edit this node's player name. The master opens it from
+         the ready screen (N / Names); a slave opens it when the master sends NAME_DIALOG. -->
+    <div id="name-modal" hidden>
+      <div class="gem-dialog gem-menu" role="dialog" aria-label="Player name">
+        <div class="gem-title"><span>YOUR NAME</span></div>
+        <div class="gem-menu-body">
+          <input
+            id="name-input"
+            class="gem-input wide"
+            maxlength="12"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="name-ok" class="gem-btn gem-default">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hidden debug overlay (toggle with D): a light, transparent live HUD of the
+         ring / game state. Non-interactive — it never blocks input. -->
+    <div id="debug-overlay" hidden><pre id="debug-content"></pre></div>
+
+    <!-- Mode menu (EPIC-24 STORY-01): the entry screen — Solo or Network. -->
+    <div id="mode-menu" hidden>
+      <div class="gem-dialog gem-menu" role="dialog" aria-label="Play mode">
+        <div class="gem-title"><span>MIDI MAZE</span></div>
+        <div class="gem-menu-body">
+          <button class="gem-btn" data-mode="solo">Solo game</button>
+          <button class="gem-btn gem-default" data-mode="network">Network game</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connect screen (EPIC-24 STORY-02): server/room, opens the idle link. -->
+    <div id="connect-screen" hidden>
+      <div class="gem-dialog" role="dialog" aria-label="Connect">
+        <div class="gem-title"><span>CONNECT</span></div>
+        <div class="gem-body">
+          <div class="grow">
+            <label>Server</label>
+            <input id="con-url" class="gem-input wide" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="grow">
+            <label>Room</label>
+            <input
+              id="con-room"
+              class="gem-input"
+              maxlength="16"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+          <div class="grow"><span id="con-msg" class="con-msg"></span></div>
+        </div>
+        <div class="gem-actions con-actions">
+          <button id="con-back" class="gem-btn">Back</button>
+          <button id="con-connect" class="gem-btn gem-default">Connect</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slave waiting screen (EPIC-24): connected, role elected to slave, waiting
+         for the master to start the game. -->
+    <div id="waiting-screen" hidden>
+      <div class="gem-dialog gem-menu" role="dialog" aria-label="Slave — waiting for host">
+        <div class="gem-title"><span>SLAVE</span></div>
+        <div class="gem-menu-body">
+          <p id="wait-msg" class="wait-msg">
+            You are a <b>SLAVE</b>.<br />Waiting for the <b>MASTER</b> to start the game…
+          </p>
         </div>
       </div>
     </div>
@@ -60,41 +155,13 @@
     <!-- Lobby (EPIC-20): a GEM/TOS-styled config dialog. -->
     <div id="lobby" hidden>
       <div class="gem-dialog" role="dialog" aria-label="Game setup">
-        <div class="gem-title"><span>MIDI MAZE</span></div>
+        <div class="gem-title"><span id="lobby-title">MIDI MAZE</span></div>
         <div class="gem-body">
-          <div class="grow">
-            <label>Mode</label>
-            <span class="gem-radios" data-radio="mode">
-              <button class="gem-radio" data-val="solo">Solo</button>
-              <button class="gem-radio" data-val="host">Host</button>
-              <button class="gem-radio" data-val="join">Join</button>
-            </span>
-          </div>
-          <div class="grow net-only">
-            <label>Server</label>
-            <input id="cfg-url" class="gem-input wide" autocomplete="off" spellcheck="false" />
-          </div>
-          <div class="grow net-only">
-            <label>Room</label>
-            <input
-              id="cfg-room"
-              class="gem-input"
-              maxlength="16"
-              autocomplete="off"
-              spellcheck="false"
-            />
+          <div class="grow" id="cfg-players-row" hidden>
+            <label>Players online</label>
+            <b id="cfg-players">1</b>
           </div>
           <div class="grow">
-            <label>Name</label>
-            <input
-              id="cfg-name"
-              class="gem-input"
-              maxlength="8"
-              autocomplete="off"
-              spellcheck="false"
-            />
-          </div>
-          <div class="grow game-only">
             <label>Maze</label>
             <span class="gem-sel">
               <button class="gem-btn" data-maze="-1" aria-label="previous maze">&lsaquo;</button>
@@ -102,28 +169,28 @@
               <button class="gem-btn" data-maze="1" aria-label="next maze">&rsaquo;</button>
             </span>
           </div>
-          <div class="grow game-only">
+          <div class="grow">
             <label>Reload</label>
             <span class="gem-radios" data-radio="reload">
               <button class="gem-radio" data-val="fast">Fast</button>
               <button class="gem-radio" data-val="slow">Slow</button>
             </span>
           </div>
-          <div class="grow game-only">
+          <div class="grow">
             <label>Regen</label>
             <span class="gem-radios" data-radio="regen">
               <button class="gem-radio" data-val="fast">Fast</button>
               <button class="gem-radio" data-val="slow">Slow</button>
             </span>
           </div>
-          <div class="grow game-only">
+          <div class="grow">
             <label>Revive</label>
             <span class="gem-radios" data-radio="revive">
               <button class="gem-radio" data-val="fast">Fast</button>
               <button class="gem-radio" data-val="slow">Slow</button>
             </span>
           </div>
-          <div class="grow game-only">
+          <div class="grow">
             <label>Lives</label>
             <span class="gem-radios" data-radio="lives">
               <button class="gem-radio" data-val="1">1</button>
@@ -131,15 +198,15 @@
               <button class="gem-radio" data-val="3">3</button>
             </span>
           </div>
-          <div class="grow game-only">
+          <div class="grow">
             <label>Friendly fire</label>
             <button class="gem-check" data-check="friendly" aria-label="friendly fire"></button>
           </div>
-          <div class="grow game-only">
+          <div class="grow">
             <label>Teams</label>
             <button class="gem-check" data-check="teams" aria-label="teams"></button>
           </div>
-          <div class="grow game-only">
+          <div class="grow">
             <label>Target drones</label>
             <span class="gem-step">
               <button class="gem-btn" data-drone-dn="0">&minus;</button>
@@ -147,7 +214,7 @@
               <button class="gem-btn" data-drone-up="0">+</button>
             </span>
           </div>
-          <div class="grow game-only">
+          <div class="grow">
             <label>Standard drones</label>
             <span class="gem-step">
               <button class="gem-btn" data-drone-dn="1">&minus;</button>
@@ -155,7 +222,7 @@
               <button class="gem-btn" data-drone-up="1">+</button>
             </span>
           </div>
-          <div class="grow game-only">
+          <div class="grow">
             <label>Ninja drones</label>
             <span class="gem-step">
               <button class="gem-btn" data-drone-dn="2">&minus;</button>

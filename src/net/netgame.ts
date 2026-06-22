@@ -3,7 +3,7 @@
 // all nodes step the identical sim from the identical joystick table (D-02, C-01).
 import { step } from '../sim/step';
 import type { World } from '../sim/world';
-import { MIDI_TERMINATE_GAME } from './protocol';
+import { MIDI_START_GAME, MIDI_TERMINATE_GAME } from './protocol';
 import type { ByteChannel } from './ring';
 
 /** Tight per-tick budget — the ring's unforgiving model (C-01). */
@@ -82,8 +82,27 @@ export class NetGame {
       return 'timeout'; // a dropped/late byte ends the ring cleanly (no desync)
     }
 
-    // The master injects MIDI_TERMINATE_GAME at slot 0 to end the game (maingame.c:434).
-    if (joy[0] === MIDI_TERMINATE_GAME) return 'terminated';
+    // The master injects MIDI_TERMINATE_GAME at slot 0 to suspend the game. The original
+    // then does a second step (maingame.c:433): the master sends a confirm byte round the
+    // ring (START_GAME = continue, TERMINATE_GAME = quit) and every slave forwards it. We
+    // never prompt "continue", so the master always confirms TERMINATE — but we still run
+    // the exchange so a real ST slave (which blocks waiting for it) ends cleanly.
+    if (joy[0] === MIDI_TERMINATE_GAME) {
+      let confirm: number;
+      try {
+        if (this.o.ownNumber === 0) {
+          ch.sendByte(MIDI_TERMINATE_GAME); // master: quit
+          confirm = await ch.readByte(this.o.timeoutMs);
+        } else {
+          confirm = await ch.readByte(this.o.timeoutMs); // slave: the master's decision
+          ch.sendByte(confirm); // forward it round the ring
+        }
+      } catch {
+        return 'terminated'; // ring already gone — end anyway
+      }
+      if (confirm !== MIDI_START_GAME) return 'terminated';
+      joy[0] = 0x00; // continue: TERMINATE is not a valid joystick command (maingame.c:464)
+    }
 
     const w = this.world;
     const joyTable = new Array<number>(w.playerAndDroneCount).fill(0);

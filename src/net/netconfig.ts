@@ -24,8 +24,13 @@ export function defaultNetConfig(): NetConfig {
   return { mode: 'solo', url: defaultOrchestratorUrl(), room: '' };
 }
 
+/** A usable orchestrator WebSocket URL (ws:// or wss://). */
+export function isValidUrl(url: string): boolean {
+  return /^wss?:\/\/.+/i.test(url.trim());
+}
+
 /** Whether the config is usable: solo always; host/join need a ws(s) URL. */
 export function isValidNet(net: NetConfig): boolean {
   if (net.mode === 'solo') return true;
-  return /^wss?:\/\/.+/i.test(net.url.trim());
+  return isValidUrl(net.url);
 }

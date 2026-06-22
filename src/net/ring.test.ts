@@ -1,6 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import { MIDI_COUNT_PLAYERS } from './protocol';
-import { ByteChannel, countMaster, countSlave, waitForControl } from './ring';
+import { MIDI_COUNT_PLAYERS, MIDI_MASTER_ELECT } from './protocol';
+import { ByteChannel, countMaster, countSlave, electMaster, waitForControl } from './ring';
+
+describe('electMaster (dispatch.c DISPATCH_AUTOMATIC)', () => {
+  it('emits 0x00 once and is master when it echoes back (ring of one / round trip)', async () => {
+    const sent: number[] = [];
+    let ch!: ByteChannel;
+    ch = new ByteChannel((bytes) => {
+      sent.push(...bytes);
+      queueMicrotask(() => ch.push(bytes)); // self-echo: our 0x00 returns
+    });
+    const role = await electMaster(ch, 200);
+    expect(role).toBe('host');
+    expect(sent).toEqual([MIDI_MASTER_ELECT]); // exactly one 0x00 (no storm)
+  });
+
+  it('is a slave when the 0x00 is absorbed (a master owns the ring): timeout', async () => {
+    const sent: number[] = [];
+    const ch = new ByteChannel((b) => sent.push(...b)); // nothing comes back
+    const role = await electMaster(ch, 30);
+    expect(role).toBe('join');
+    expect(sent).toEqual([MIDI_MASTER_ELECT]);
+  });
+
+  it('is a slave when a non-zero byte returns (own_number != 0)', async () => {
+    let ch!: ByteChannel;
+    ch = new ByteChannel(() => queueMicrotask(() => ch.push(Uint8Array.of(2))));
+    expect(await electMaster(ch, 200)).toBe('join');
+  });
+});
 
 describe('waitForControl (slave election echo)', () => {
   it('echoes 0x00s and returns the first control byte (also echoed)', async () => {

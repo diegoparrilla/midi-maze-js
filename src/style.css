@@ -131,6 +131,28 @@ body {
   letter-spacing: 2px;
 }
 
+/* Play button (EPIC-24): top-left, where the touch map button sits, shown only in the
+   "ready" screen. Big enough to tap; 'P' is the keyboard equivalent. */
+#play-btn {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  padding: 8px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 8px;
+  background: rgba(40, 40, 48, 0.6);
+  color: rgba(255, 255, 255, 0.9);
+  font:
+    700 16px/1 Geneva,
+    Verdana,
+    sans-serif;
+  letter-spacing: 2px;
+  cursor: pointer;
+}
+#play-btn:active {
+  background: rgba(120, 120, 140, 0.7);
+}
+
 #fullscreen-btn {
   position: absolute;
   top: 6px;
@@ -143,6 +165,34 @@ body {
   color: rgba(255, 255, 255, 0.7);
   font-size: 16px;
   cursor: pointer;
+}
+
+/* ---- Net-status dot (EPIC-24 STORY-03): left of the fullscreen button ---- */
+#net-status {
+  position: absolute;
+  top: 12px;
+  right: 42px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  background: #888;
+  pointer-events: none;
+}
+#net-status.connecting {
+  background: #e0a000; /* amber: dialing the orchestrator */
+}
+#net-status.connected {
+  background: #25c225; /* green: link held idle / in game */
+}
+#net-status.dropped {
+  background: #e02020; /* red + blink: link lost, reconnecting */
+  animation: netblink 0.8s step-start infinite;
+}
+@keyframes netblink {
+  50% {
+    opacity: 0.15;
+  }
 }
 
 /* ---- Orientation gate (above everything, incl. the lobby) ---- */
@@ -204,8 +254,14 @@ body {
   margin-top: 4px;
 }
 
-/* ---- Lobby (EPIC-20): a GEM / Atari TOS dialog floating over the playfield ---- */
-#lobby {
+/* ---- Lobby (EPIC-20) + entry screens (EPIC-24): GEM / Atari TOS dialogs
+       floating over the playfield ---- */
+#lobby,
+#mode-menu,
+#connect-screen,
+#waiting-screen,
+#role-modal,
+#name-modal {
   position: fixed;
   inset: 0;
   z-index: 25;
@@ -217,6 +273,77 @@ body {
   overflow: auto;
   font-family: Geneva, Verdana, 'DejaVu Sans', sans-serif;
   color: #000;
+}
+
+/* Role + name modals sit above the ready / waiting screens. */
+#role-modal,
+#name-modal {
+  z-index: 30;
+}
+
+/* Debug overlay (toggle with D): a light, transparent live HUD, top-left, above
+   everything. pointer-events: none so it never blocks input — D is the only control. */
+#debug-overlay {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 40;
+  max-height: 94vh;
+  overflow: hidden;
+  pointer-events: none;
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 5px;
+  background: rgba(8, 10, 18, 0.45);
+}
+#debug-overlay pre {
+  margin: 0;
+  font:
+    11px/1.4 'DejaVu Sans Mono',
+    Menlo,
+    monospace;
+  white-space: pre;
+  color: rgba(225, 240, 255, 0.95);
+  text-shadow: 0 1px 1px #000;
+}
+
+/* Names button: directly under the Play button on the ready screen. */
+#names-btn {
+  position: absolute;
+  left: 12px;
+  top: 56px;
+  padding: 6px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 8px;
+  background: rgba(40, 40, 48, 0.6);
+  color: rgba(255, 255, 255, 0.9);
+  font:
+    700 14px/1 Geneva,
+    Verdana,
+    sans-serif;
+  letter-spacing: 2px;
+  cursor: pointer;
+}
+#names-btn:active {
+  background: rgba(120, 120, 140, 0.7);
+}
+
+/* Connect screen: status line + two-button action row. */
+.con-msg {
+  min-height: 16px;
+  font-size: 12px;
+  color: #500;
+}
+.con-actions {
+  gap: 10px;
+}
+
+/* Waiting-for-host message. */
+.wait-msg {
+  margin: 4px 2px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
 }
 .gem-dialog {
   width: min(94vw, 460px);

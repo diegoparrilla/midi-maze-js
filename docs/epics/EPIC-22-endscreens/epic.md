@@ -11,7 +11,12 @@ Kill chart, score noteboard, and win/lose tongue/blink animations (popchart.c, n
 
 ## Stories
 
-Authored at the start of iteration 6 (just-in-time, per ITERATIONS.md).
+- STORY-01: Kills window (pop chart) — one dead face per kill in the right-hand panel
+  (`popchart.c`). Authored early because the gap surfaced during ST testing (the panel
+  is blank in the web build). The sim already records the data (`ply_score` +
+  `ply_looser`); this is render + kill-order tracking.
+- (later) Score noteboard (`notebrd.c`) and win/lose tongue/blink end animations
+  (`endshape.c`) — authored just-in-time when iteration 6 starts.
 
 ## Notes
 
