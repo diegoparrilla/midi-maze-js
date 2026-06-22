@@ -2,7 +2,7 @@
 id: EPIC-16
 iteration: 4
 title: Browser-vs-browser validation
-status: in-progress
+status: done
 ---
 
 ## Goal
