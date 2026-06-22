@@ -23,6 +23,14 @@ const FACE = faceRaw as Shape[][];
 const COLOR_PLY_BACK = [8, 3, 9, 13, 11, 12, 10, 15, 8, 3, 9, 13, 11, 12, 10, 15];
 const COLOR_PLY_FRAME = [0, 0, 0, 0, 0, 0, 0, 0, 10, 11, 10, 11, 10, 10, 11, 10];
 const COLOR_DKGREEN = 5;
+const COLOR_RED = 14;
+// End-screen decorations (endshape.c). View-relative, drawn over the winner's face.
+const BLINZ = [0x8002, 0xc006, 0x600c, 0xbffa, 0x2aa8, 0x0aa0]; // eye lashes: 6 rows × 1 word
+// prettier-ignore
+const LOOSER = [
+  0x8000, 0x4000, 0xe001, 0xc000, 0xff7f, 0xc000, 0xff7f, 0x8000, 0x7fff, 0x0000,
+  0x3fff, 0x0000, 0x1ffe, 0x0000, 0x0ff8, 0x0000, 0x03e0, 0x0000, // tongue: 9 rows × 2 words
+];
 const BODY_SHAPE_BACK_VIEW = 10;
 const BODY_SHAPE_FRONT_VIEW = 0; // smily from the front (globals.h)
 const BODY_SHAPE_MAX_SIZE = 32; // largest body size (globals.h)
@@ -113,6 +121,19 @@ export function drawShape(
   blitMask(ctx, ball.rows, 0, ww, h, x, top, COLOR_PLY_BACK[colorIndex & 15]!);
   const face = FACE[s]![sprite]!;
   blitMask(ctx, face.rows, 0, ww, h, x, top, COLOR_PLY_FRAME[colorIndex & 15]!);
+}
+
+/** Winner's eye-lashes (endshape.c blinzshape) over the face, view-relative, in the
+ *  winner's frame colour — flashed on/off for a blink. The C blit (82,43) draws upward
+ *  (y = bottom line), so top = 43 - (6-1) = 38 for our downward blit. */
+export function drawWinLashes(ctx: CanvasRenderingContext2D, winner: number): void {
+  blitMask(ctx, BLINZ, 0, 1, 6, 82, 38, COLOR_PLY_FRAME[winner & 15]!);
+}
+
+/** Loser's tongue (endshape.c loosershape) over the winner's face, view-relative, in
+ *  red. The C blit (71,72) draws upward (y = bottom line), so top = 72 - (9-1) = 64. */
+export function drawLoseTongue(ctx: CanvasRenderingContext2D): void {
+  blitMask(ctx, LOOSER, 0, 2, 9, 71, 64, COLOR_RED);
 }
 
 export { BODY_SHAPE_BACK_VIEW, BODY_SHAPE_FRONT_VIEW, BODY_SHAPE_MAX_SIZE, BODY_SHAPE_NO_SHADOW };

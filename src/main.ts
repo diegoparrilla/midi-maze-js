@@ -43,7 +43,9 @@ import {
   BODY_SHAPE_FRONT_VIEW,
   BODY_SHAPE_MAX_SIZE,
   BODY_SHAPE_NO_SHADOW,
+  drawLoseTongue,
   drawShape,
+  drawWinLashes,
 } from './render/shapes';
 import { drawView3D } from './render/view3d';
 import { assignDroneTypes, droneSetup } from './sim/drone';
@@ -526,11 +528,12 @@ async function runNetSession(role: 'host' | 'join'): Promise<void> {
   if (!quitRequested) {
     flow.winner = end === 'winner' ? findWinner(world) : -1;
     flow.phase = 'gameover';
-    flow.timer = GAMEOVER_TICKS; // keeps canRestart() false — this auto-advances below
     for (let t = 0; t < GAMEOVER_TICKS; t++) {
+      flow.timer = GAMEOVER_TICKS - t; // counts down so drawGameOver's end animation advances
       renderWorld();
       await nextFrame();
     }
+    flow.timer = 0;
   }
   netActive = false;
 
@@ -1014,14 +1017,54 @@ function drawDeadView(): void {
   viewText('"Have a nice day!"', 92);
 }
 
-/** End screen: the winner's face + result text, then "press any key". */
+// End-screen animation (endshape.c): the winner's face turns around once if you won, or
+// shakes twice if you lost. Sprite (face direction 0..19) per frame.
+// prettier-ignore
+const WINNER_ANIM = [0,0,0,19,19,18,17,16,15,14,13,12,11,10,10,10,10,10,10,9,8,7,6,5,4,3,2,1,0];
+// prettier-ignore
+const LOSE_ANIM = [0,1,2,3,3,2,1,0,19,18,17,17,18,19,0,1,2,3,3,2,1,0,19,18,17,17,18,19,0];
+const ANIM_PACE = 2; // ticks per animation frame
+
+/** End screen: the winner's face spins (win) / shakes (lose), then a blink (win) or a
+ *  tongue (lose); then "press any key". */
 function drawGameOver(): void {
   drawDashboard();
   fillView('#9a9a9a');
   const w = flow.winner;
   if (w >= 0) {
-    drawShape(ctx!, 48, BODY_SHAPE_MAX_SIZE, BODY_SHAPE_FRONT_VIEW, BODY_SHAPE_NO_SHADOW, w);
-    viewText(w === cameraIndex ? 'You win!' : `${playerName(w)} wins!`, 14);
+    const won =
+      w === cameraIndex ||
+      (!!world.teamFlag && world.players[w]!.ply_team === world.players[cameraIndex]!.ply_team);
+    const elapsed = GAMEOVER_TICKS - flow.timer; // ticks since game over
+    const anim = won ? WINNER_ANIM : LOSE_ANIM;
+    const frame = Math.floor(elapsed / ANIM_PACE);
+    const spinning = frame < anim.length;
+    drawShape(
+      ctx!,
+      48,
+      BODY_SHAPE_MAX_SIZE,
+      spinning ? anim[frame]! : BODY_SHAPE_FRONT_VIEW,
+      BODY_SHAPE_NO_SHADOW,
+      w,
+    );
+    if (!spinning) {
+      // after the turn: the winner blinks (lashes flash ~every 0.8s), the loser is shown a tongue
+      if (won) {
+        if ((elapsed - anim.length * ANIM_PACE) % 48 < 8) drawWinLashes(ctx!, w);
+      } else {
+        drawLoseTongue(ctx!);
+      }
+    }
+    viewText(
+      won
+        ? world.teamFlag
+          ? 'Your team wins!'
+          : 'You win!'
+        : world.teamFlag
+          ? 'Your team loses!'
+          : `${playerName(w)} wins!`,
+      14,
+    );
   }
   drawKillsWindow(ctx!, killLog.victims); // the kills persist through the end screen
   if (flow.canRestart()) viewText('press any key', 92);
