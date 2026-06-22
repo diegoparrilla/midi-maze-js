@@ -48,6 +48,8 @@ import {
   drawWinLashes,
 } from './render/shapes';
 import { drawView3D } from './render/view3d';
+import { sfx } from './sound/sfx';
+import { detectSfx } from './sound/triggers';
 import { assignDroneTypes, droneSetup } from './sim/drone';
 import { Rng } from './sim/rng';
 import { initAllPlayer } from './sim/setup';
@@ -123,6 +125,15 @@ function newWorld(cfg: GameConfig): World {
 
 let world = newWorld(config);
 const killLog = new KillLog(); // the camera player's kills, for the pop chart (EPIC-22)
+let prevReload = 0; // camera player's reload last tick, for shot-fired edge detection (EPIC-21)
+
+/** Play the local shot/hit SFX for the camera player after the world advanced. */
+function playSfx(): void {
+  const edges = detectSfx(world, cameraIndex, prevReload);
+  prevReload = edges.reload;
+  if (edges.shot) sfx.playShot();
+  if (edges.hit) sfx.playHit();
+}
 const flow = new GameFlow();
 const input = new Input();
 let mapMode = false;
@@ -252,6 +263,7 @@ function goReady(): void {
  *  show how many humans are online and cap the drone slots; solo opens it directly. */
 function onPlay(): void {
   if (route !== 'ready' || !roleModal.hidden) return; // wait until the role modal is dismissed
+  sfx.unlock(); // first user gesture: arm the AudioContext (autoplay policy)
   if (isNetwork) void openMasterLobby();
   else goLobby();
 }
@@ -411,6 +423,7 @@ function setStatus(text: string): void {
 
 /** The Start button: solo game, or (network) host the ring as the elected master. */
 function onStart(): void {
+  sfx.unlock(); // ensure audio is armed even if the lobby was reached without Play
   if (isNetwork) {
     hideOverlays();
     void runNetSession('host');
@@ -430,6 +443,7 @@ function startSolo(): void {
   setNetStatus(null);
   world = newWorld(config);
   killLog.reset();
+  prevReload = 0;
   flow.startGame();
 }
 
@@ -482,6 +496,7 @@ async function runNetSession(role: 'host' | 'join'): Promise<void> {
   world = buildNetWorld(setup);
   cameraIndex = setup.ownNumber;
   killLog.reset(); // clear the kills window for the new game (maingame.c:178)
+  prevReload = 0;
 
   // Map preview: a fixed 5s look at the start map (maingame.c:218), synchronised by
   // the handshake completing on every node.
@@ -502,6 +517,7 @@ async function runNetSession(role: 'host' | 'join'): Promise<void> {
     onTick: () => {
       const p = world.players[cameraIndex]!;
       killLog.update(p.ply_score, p.ply_looser); // record kills for the pop chart
+      playSfx();
       renderWorld();
       setStatus(`${roleLabel} · field (${p.ply_x >> 7},${p.ply_y >> 7}) · score ${p.ply_score}/10`);
     },
@@ -1137,6 +1153,7 @@ function frame(): void {
     step(world, joyTable, dronesActive);
     const me = world.players[cameraIndex]!;
     killLog.update(me.ply_score, me.ply_looser); // record kills for the pop chart
+    playSfx();
   }
   renderWorld();
 
