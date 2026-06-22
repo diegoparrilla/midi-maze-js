@@ -16,7 +16,14 @@ interface Golden {
   fastSinFactors: { factor: number; angle: number; v: number }[];
   rotate: { x: number; y: number; angle: number; rx: number; ry: number }[];
   speedTable: { deltaY: number; deltaX: number }[];
-  rng: { seed: number; random: number[]; rnd14: number[]; rnd256: number[] };
+  rng: {
+    seed: number;
+    random: number[];
+    rnd14: number[];
+    rnd256: number[];
+    randomLong: number[];
+    rndByMax: { max: number; seq: number[] }[];
+  };
 }
 
 const golden: Golden = JSON.parse(
@@ -78,5 +85,25 @@ describe('shared RNG vs C', () => {
 
     rng.setSeed(golden.rng.seed);
     expect(golden.rng.rnd256.map(() => rng.rnd(256))).toEqual(golden.rng.rnd256);
+  });
+
+  it('stays in sync over a long run (16-bit truncation drift, C-02)', () => {
+    const rng = new Rng();
+    rng.setSeed(golden.rng.seed);
+    const checkpoints = new Set([99, 999, 9999, 49999]);
+    const got: number[] = [];
+    for (let i = 0; i <= 49999; i++) {
+      const v = rng.random();
+      if (checkpoints.has(i)) got.push(v);
+    }
+    expect(got).toEqual(golden.rng.randomLong);
+  });
+
+  it('reproduces _rnd across maxVals (rejection-sampling thresholds)', () => {
+    for (const { max, seq } of golden.rng.rndByMax) {
+      const rng = new Rng();
+      rng.setSeed(golden.rng.seed);
+      expect(seq.map(() => rng.rnd(max))).toEqual(seq);
+    }
   });
 });
