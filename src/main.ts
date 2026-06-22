@@ -196,9 +196,12 @@ function humanCount(): number {
 // waits — possibly for minutes — for the master to start (SLAVE_WAIT_MS); both centralized
 // in net/timing.ts (EPIC-19). The in-game per-tick deadline adapts to RTT (see netTickBand).
 const HOST_SETUP_MS = SETUP_TIMEOUT_MS;
-// Start-map preview: the original's "5s delay to allow the player to see the map"
-// (maingame.c:218, 300 Vsync). Wall-clock so it's exactly 5s regardless of frame rate.
-const PREVIEW_MS = 5000;
+// Start-map preview: the original's "delay to allow the player to see the map" is
+// 300 Vsync (maingame.c:218) — a ring-silent gap. On a PAL ST (50 Hz) that is 6s, not 5;
+// we match it so a browser MASTER doesn't finish its preview and fire its first joystick
+// byte ~1s before a PAL ST SLAVE has left its own preview (that early byte would be
+// flushed stale by the bridge → a permanent off-by-one). 300 frames @ 50 Hz = 6000 ms.
+const PREVIEW_MS = 6000;
 
 /** Show the screen for the current pre-game route; hide all once a game is running. */
 function refreshScreens(): void {
