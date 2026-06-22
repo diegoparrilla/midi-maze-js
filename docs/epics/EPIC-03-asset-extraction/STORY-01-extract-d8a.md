@@ -17,7 +17,8 @@ extracted from `MIDIMAZE.PD/MIDIMAZE.D8A` into committed, web-loadable asset fil
 - [x] Export the sine table (first quarter, 65 words, `sin*256`) to a data file
 - [x] Export the 24 ball/body shapes (used for players *and* shots — no face)
 - [x] Export the 24×20 face images (1bpp word rows; `face_shape_tab` lands in EPIC-07)
-- [ ] (Bonus) Export the colour title screen (needs `convert_title` RLE decode) — deferred
+- [x] (Bonus) Export the colour title screen (`convert_title` RLE decode) — descoped: the
+      web build ships its own dashboard background, so the original title screen isn't needed
 - [x] Place assets under `src/assets/generated/`; raw originals vendored in `assets-src/`
 
 ## Acceptance
