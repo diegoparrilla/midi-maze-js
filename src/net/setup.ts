@@ -6,8 +6,11 @@ import type { GameConfig } from '../game/config';
 import { loadMazeById } from '../game/mazes';
 import type { Maze } from '../maze';
 import {
+  DATA_CONFIG_BYTES,
+  DATA_TEAM_BYTES,
   decodeData,
   encodeData,
+  MAZE_BYTES,
   MIDI_COUNT_PLAYERS,
   MIDI_NAME_DIALOG,
   MIDI_SEND_DATA,
@@ -103,13 +106,65 @@ export function setSendWindow(n: number): void {
   if (Number.isFinite(n) && n >= 1) sendWindow = Math.min(512, Math.floor(n));
 }
 
-async function sendPaced(ch: ByteChannel, bytes: Uint8Array, timeoutMs?: number): Promise<void> {
+/**
+ * Send the SEND_DATA block with the **exact pacing of the original `send_datas`**
+ * (midicomm.c) — this talks to real 40-year-old hardware, so the byte cadence must match:
+ *
+ *  - config (8 bytes): strictly 1:1 — send a byte, wait for its echo round the ring.
+ *  - maze (4096 bytes): only after `sendWindow` (50) bytes are out do we read echoes,
+ *    lagging by the window, then drain the window ("buffering increases performance").
+ *  - teams (team-flag + 16): sent as one burst, then all echoes drained.
+ *  - friendly-fire: 1:1.
+ *
+ * Every section reads exactly as many echoes as it sent, so the ring stays balanced and
+ * never more than the original's bytes are in flight (no overrun of the ST's ACIA).
+ */
+async function sendDataBlock(
+  ch: ByteChannel,
+  block: Uint8Array,
+  timeoutMs?: number,
+): Promise<void> {
+  let p = 0;
+  for (let i = 0; i < DATA_CONFIG_BYTES; i++) {
+    ch.sendByte(block[p++]!);
+    await ch.readByte(timeoutMs); // 1:1
+  }
   const w = sendWindow;
-  for (let i = 0; i < bytes.length; i++) {
-    ch.sendByte(bytes[i]!);
+  for (let i = 0; i < MAZE_BYTES; i++) {
+    ch.sendByte(block[p++]!);
     if (i >= w) await ch.readByte(timeoutMs); // echo lags by the window
   }
-  for (let i = 0; i < Math.min(w, bytes.length); i++) await ch.readByte(timeoutMs); // drain
+  for (let i = 0; i < Math.min(w, MAZE_BYTES); i++) await ch.readByte(timeoutMs); // drain
+  for (let i = 0; i < DATA_TEAM_BYTES; i++) ch.sendByte(block[p++]!); // burst
+  for (let i = 0; i < DATA_TEAM_BYTES; i++) await ch.readByte(timeoutMs); // drain
+  ch.sendByte(block[p++]!); // friendly-fire, 1:1
+  await ch.readByte(timeoutMs);
+}
+
+/**
+ * RNG-seed ring exchange (`maingame.c:128-154`), done at game start **after** the data
+ * block — NOT inside it. The master puts its 16-bit seed on the ring (hi then lo) and
+ * reads it back; every slave reads each byte and forwards it. All nodes end holding the
+ * same `(hi<<8)|lo`. In a ring of one the master's bytes self-echo. Two bytes, balanced.
+ */
+export async function exchangeSeed(
+  ch: ByteChannel,
+  ownNumber: number,
+  ownSeed: number,
+  timeoutMs?: number,
+): Promise<number> {
+  if (ownNumber === 0) {
+    ch.sendByte((ownSeed >> 8) & 0xff);
+    const hi = await ch.readByte(timeoutMs);
+    ch.sendByte(ownSeed & 0xff);
+    const lo = await ch.readByte(timeoutMs);
+    return ((hi << 8) | lo) & 0xffff;
+  }
+  const hi = await ch.readByte(timeoutMs);
+  ch.sendByte(hi); // forward
+  const lo = await ch.readByte(timeoutMs);
+  ch.sendByte(lo);
+  return ((hi << 8) | lo) & 0xffff;
 }
 
 /**
@@ -195,9 +250,15 @@ export async function runSetup(
       const names = await exchangeNames(ch, c.ownNumber, c.machinesOnline, chosen, timeoutMs);
       opts.onNames?.(names);
     } else if (b === MIDI_START_GAME) {
-      const sd = await receiveData(ch, ownNumber, machinesOnline, config.playerName, timeoutMs);
-      const { config: cfg, maze, seed: s, names } = sd;
-      return { config: cfg, maze, seed: s, ownNumber, machinesOnline, names };
+      const {
+        config: cfg,
+        maze,
+        names,
+      } = await receiveData(ch, ownNumber, machinesOnline, config.playerName, timeoutMs);
+      // Seed comes after the data block as its own 2-byte ring exchange (maingame.c): the
+      // slave reads the master's seed and forwards it.
+      const seed = await exchangeSeed(ch, ownNumber, 0, timeoutMs);
+      return { config: cfg, maze, seed, ownNumber, machinesOnline, names };
     }
   }
 }
@@ -243,12 +304,14 @@ export async function hostStart(
   );
 
   const maze = loadMazeById(config.mazeId);
-  const block = encodeData(maze, config, seed);
-  await sendPaced(ch, block, timeoutMs); // throttle to MIDI speed — a real ST can't take 4KB at once
+  await sendDataBlock(ch, encodeData(maze, config), timeoutMs); // byte-exact send_datas pacing
+  // Seed: a separate 2-byte ring exchange after the block (maingame.c) — the master puts
+  // its seed on the ring; in a clean ring it reads the same value back.
+  const exchangedSeed = await exchangeSeed(ch, count.ownNumber, seed, timeoutMs);
   return {
     config,
     maze,
-    seed,
+    seed: exchangedSeed,
     ownNumber: count.ownNumber,
     machinesOnline: count.machinesOnline,
     names,

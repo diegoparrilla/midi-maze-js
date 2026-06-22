@@ -38,7 +38,9 @@ export function defaultConfig(): GameConfig {
     teams: new Array<number>(PLAYER_MAX_COUNT).fill(0),
     drones: [0, 0, 0],
     mazeId: 'midimaze',
-    playerName: 'Player #1',
+    // Byte-exact to MIDI Maze's default name "Player # N" (space on BOTH sides of '#');
+    // the ST sends 11 bytes incl. the NUL, so we must match its framing in the name ring.
+    playerName: 'Player # 1',
   };
 }
 
