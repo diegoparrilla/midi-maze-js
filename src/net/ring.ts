@@ -3,6 +3,9 @@
 // and `readByte()` awaits the next one, so the handshake reads like the C while
 // staying async. Election + COUNT-PLAYERS faithful to slave.c / master.c (D-11, C-04).
 import { MIDI_COUNT_PLAYERS, MIDI_MASTER_ELECT } from './protocol';
+import { ELECTION_TIMEOUT_MS, RING_DEFAULT_TIMEOUT_MS } from './timing';
+
+export { ELECTION_TIMEOUT_MS };
 
 export interface RingChannel {
   send(bytes: Uint8Array): void;
@@ -10,7 +13,7 @@ export interface RingChannel {
   readByte(timeoutMs?: number): Promise<number>;
 }
 
-const DEFAULT_TIMEOUT_MS = 2000;
+const DEFAULT_TIMEOUT_MS = RING_DEFAULT_TIMEOUT_MS;
 
 /** Buffers inbound wire bytes and hands them out one at a time to the handshake. */
 export class ByteChannel implements RingChannel {
@@ -84,10 +87,6 @@ export class ByteChannel implements RingChannel {
 }
 
 export type Role = 'host' | 'join';
-
-/** Election round-trip allowance (ms). The original uses MIDI_DEFAULT_TIMEOUT (~0.4s
- *  PAL VBL); over a WebSocket ring we allow more for the byte to travel every node. */
-export const ELECTION_TIMEOUT_MS = 1500;
 
 /**
  * Master election (dispatch.c `DISPATCH_AUTOMATIC`): flush, emit `0x00` once, read one

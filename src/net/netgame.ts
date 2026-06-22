@@ -5,6 +5,7 @@ import { step } from '../sim/step';
 import type { World } from '../sim/world';
 import { MIDI_START_GAME, MIDI_TERMINATE_GAME } from './protocol';
 import type { ByteChannel } from './ring';
+import { AdaptiveTimeout } from './timing';
 
 /** Tight per-tick budget — the ring's unforgiving model (C-01). */
 export const TICK_TIMEOUT_MS = 1500;
@@ -47,7 +48,11 @@ export interface NetGameOptions {
   localInput: () => number;
   /** Optional per-tick hook (render / status), after the sim advanced. */
   onTick?: (world: World, tick: number) => void;
+  /** A fixed per-read deadline. When omitted, the deadline adapts to measured RTT
+   *  (`adaptive`); set this to pin a deadline (tests, debugging). */
   timeoutMs?: number;
+  /** Adaptive per-tick deadline (EPIC-19). Ignored when `timeoutMs` is set. */
+  adaptive?: AdaptiveTimeout;
 }
 
 /**
@@ -63,18 +68,29 @@ export class NetGame {
   /** The joystick ring table from the most recent tick (for interop telemetry). */
   lastJoy: number[] = [];
   /** Wall-clock ms the most recent ring exchange took — how close a real ring runs to
-   *  `TICK_TIMEOUT_MS` (C-01); surfaced in the interop overlay (EPIC-18). */
+   *  the deadline (C-01); surfaced in the interop overlay (EPIC-18). */
   lastTickMs = 0;
+  /** The deadline (ms) used for the most recent tick's reads (fixed or adaptive). */
+  lastTimeoutMs = 0;
   private readonly o: NetGameOptions;
+  private readonly adaptive: AdaptiveTimeout;
 
   constructor(opts: NetGameOptions) {
     this.o = opts;
     this.world = opts.world;
+    this.adaptive = opts.adaptive ?? new AdaptiveTimeout();
+  }
+
+  /** The per-read deadline for the next tick: the pinned `timeoutMs`, else adaptive. */
+  private deadline(): number {
+    return this.o.timeoutMs ?? this.adaptive.next();
   }
 
   /** Run one tick. Returns the end reason, or null to keep going. */
   async runTick(ch: ByteChannel): Promise<NetEnd | null> {
     let joy: number[];
+    const timeout = this.deadline();
+    this.lastTimeoutMs = timeout;
     const t0 = performance.now();
     try {
       joy = await exchangeJoysticks(
@@ -82,12 +98,13 @@ export class NetGame {
         this.o.ownNumber,
         this.o.machinesOnline,
         this.o.localInput() & 0xff,
-        this.o.timeoutMs,
+        timeout,
       );
     } catch {
       return 'timeout'; // a dropped/late byte ends the ring cleanly (no desync)
     }
     this.lastTickMs = performance.now() - t0;
+    this.adaptive.update(this.lastTickMs); // feed the RTT back so the next deadline adapts
     this.lastJoy = joy;
 
     // The master injects MIDI_TERMINATE_GAME at slot 0 to suspend the game. The original
@@ -100,9 +117,9 @@ export class NetGame {
       try {
         if (this.o.ownNumber === 0) {
           ch.sendByte(MIDI_TERMINATE_GAME); // master: quit
-          confirm = await ch.readByte(this.o.timeoutMs);
+          confirm = await ch.readByte(timeout);
         } else {
-          confirm = await ch.readByte(this.o.timeoutMs); // slave: the master's decision
+          confirm = await ch.readByte(timeout); // slave: the master's decision
           ch.sendByte(confirm); // forward it round the ring
         }
       } catch {
