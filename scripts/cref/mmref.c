@@ -5642,6 +5642,51 @@ int main(void) {
   }
   printf("  \"match\": [");
   run_match("three-players", 4242, MC, matchJoy, MN);
+
+  /* Fuzz: many randomized full-tick matches, replayed bit-for-bit by step.test.ts
+   * (EPIC-17, C-02). A standalone LCG drives the joysticks so it never perturbs the
+   * sim's _random_seed (placement + respawn); the bytes are emitted, so the TS side
+   * just replays them. Seeds are fixed, so regeneration is byte-stable. Counts/seeds
+   * are varied to exercise movement, collision, shooting, hit/kill/score and the
+   * RNG-driven respawn across many random paths. */
+  static const struct {
+    int seed;
+    int count;
+    int ticks;
+    int fireRate;
+  } fuzz[] = {
+    {1, 1, 48, 6},    {7, 2, 48, 5},     {13, 2, 60, 3},   {101, 3, 48, 4},
+    {202, 3, 60, 8},  {303, 4, 48, 4},   {404, 4, 60, 6},  {555, 5, 48, 5},
+    {616, 6, 48, 4},  {727, 6, 60, 7},   {838, 8, 40, 4},  {949, 8, 56, 8},
+    {1234, 2, 64, 2}, {4321, 4, 64, 10}, {2718, 5, 56, 5}, {3142, 7, 48, 6},
+  };
+  /* direction choices, weighted toward forward motion so players travel and collide */
+  static const int dirChoice[] = {
+    JOYSTICK_UP,
+    JOYSTICK_UP,
+    JOYSTICK_UP,
+    JOYSTICK_UP | JOYSTICK_LEFT,
+    JOYSTICK_UP | JOYSTICK_RIGHT,
+    JOYSTICK_LEFT,
+    JOYSTICK_RIGHT,
+    JOYSTICK_DOWN,
+  };
+  static int fuzzJoy[16 * 64];
+  for (size_t f = 0; f < sizeof(fuzz) / sizeof(fuzz[0]); f++) {
+    unsigned long lcg = (unsigned long)(fuzz[f].seed * 2654435761u) + 12345u;
+    int c = fuzz[f].count, n = fuzz[f].ticks;
+    for (int k = 0; k < c * n; k++) {
+      lcg = lcg * 1103515245u + 12345u;
+      int dir = dirChoice[(lcg >> 16) % (sizeof(dirChoice) / sizeof(dirChoice[0]))];
+      lcg = lcg * 1103515245u + 12345u;
+      int fire = ((int)((lcg >> 16) % 10) < fuzz[f].fireRate) ? JOYSTICK_BUTTON : 0;
+      fuzzJoy[k] = dir | fire;
+    }
+    char nm[32];
+    snprintf(nm, sizeof(nm), "fuzz-%02d-p%d", (int)f, c);
+    printf(",");
+    run_match(nm, fuzz[f].seed, c, fuzzJoy, n);
+  }
   printf("],\n");
 
   /* render-list for sample viewpoints (walls only) + sprite scenes on the shared maze */

@@ -2,13 +2,15 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Maze } from '../maze';
+import { describeDivergence, firstDivergence } from './divergence';
 import type { Player } from './player';
 import { Rng } from './rng';
 import { initAllPlayer } from './setup';
 import { step } from './step';
 import { World } from './world';
 
-interface Full {
+// A type alias (not an interface) so it satisfies firstDivergence's Record<string, number>.
+type Full = {
   y: number;
   x: number;
   dir: number;
@@ -19,7 +21,7 @@ interface Full {
   shoot: number;
   shootx: number;
   shooty: number;
-}
+};
 interface Match {
   name: string;
   seed: number;
@@ -89,7 +91,9 @@ describe('step() full tick vs C', () => {
         expect(step(world, joyTable)).toBe(true);
         trace.push(world.players.slice(0, m.count).map(full));
       }
-      expect(trace).toEqual(m.trace);
+      // A precise locator beats a 64-tick × 8-player deep-diff dump when a fuzz case fails.
+      const d = firstDivergence(m.trace, trace);
+      expect(d, d ? describeDivergence(d) : undefined).toBeNull();
     });
   }
 });
