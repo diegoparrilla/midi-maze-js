@@ -3,7 +3,7 @@ import { defaultConfig } from '../game/config';
 import { loadMazeById } from '../game/mazes';
 import { MIDI_NAME_DIALOG } from './protocol';
 import { ByteChannel, countMaster } from './ring';
-import { exchangeNames, hostCount, hostStart, nameBarrier, runSetup } from './setup';
+import { exchangeNames, exchangeSeed, hostCount, hostStart, nameBarrier, runSetup } from './setup';
 
 /** Wire two channels as a 2-node orchestrator ring: master.OUT → slave.IN, and back.
  *  queueMicrotask keeps it async (no synchronous re-entrancy), like the real transport. */
@@ -87,5 +87,15 @@ describe('master + slave handshake over a 2-node ring', () => {
     await slaveP;
     expect(masterNames).toEqual(['ALICE', 'BO']);
     expect(slaveNames).toEqual(['ALICE', 'BO']);
+  });
+
+  it('seed exchange: master originates, slave reads it (a separate 2-byte ring step)', async () => {
+    const { master, slave } = ring();
+    const [m, s] = await Promise.all([
+      exchangeSeed(master, 0, 0x1234, 3000), // master puts its seed on the ring
+      exchangeSeed(slave, 1, 0, 3000), // slave reads + forwards it
+    ]);
+    expect(m).toBe(0x1234);
+    expect(s).toBe(0x1234); // both nodes hold the master's seed (maingame.c:128-154)
   });
 });

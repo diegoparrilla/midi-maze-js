@@ -16,31 +16,33 @@ export const MIDI_START_GAME = 0x84;
 export const MIDI_ABOUT = 0x85;
 export const MIDI_NAME_DIALOG = 0x86;
 
-const MAZE_BYTES = MAZE_MAX_SIZE * MAZE_MAX_SIZE; // 4096
+export const MAZE_BYTES = MAZE_MAX_SIZE * MAZE_MAX_SIZE; // 4096
 
-/** Fixed SEND_DATA data block (no names — those are a separate ring exchange,
- *  `midi_send_playernames`): maze-size + reload + regen + revive + lives + 3 drones +
- *  4096 maze + team-flag + 16 teams + friendly-fire + seed hi/lo. */
-export const SEND_DATA_FIXED = 1 + 1 + 1 + 1 + 1 + 3 + MAZE_BYTES + 1 + PLAYER_MAX_COUNT + 1 + 2;
+// Byte layout of the SEND_DATA block, byte-exact to send_datas/receive_datas (midicomm.c).
+// The RNG seed is NOT here — the original shares it via a separate 2-byte ring exchange at
+// game start (maingame.c:128-154), so adding it here would put 2 extra bytes on the wire
+// that a real ST never reads. Player names are a separate ring exchange too.
+export const DATA_CONFIG_BYTES = 1 + 1 + 1 + 1 + 1 + 3; // maze-size,reload,regen,revive,lives,3 drones
+export const DATA_TEAM_BYTES = 1 + PLAYER_MAX_COUNT; // team-flag + 16 teams
+/** maze-size + reload + regen + revive + lives + 3 drones + 4096 maze + team-flag +
+ *  16 teams + friendly-fire = 4122 bytes (matches `send_datas`, no seed). */
+export const SEND_DATA_FIXED = DATA_CONFIG_BYTES + MAZE_BYTES + DATA_TEAM_BYTES + 1;
 
-/** The shared game definition carried by the MIDI_SEND_DATA data block (no names). */
+/** The shared game definition carried by the MIDI_SEND_DATA data block (no names, no seed). */
 export interface GameData {
   /** The 64×64 (4096-byte) maze grid. */
   maze: Maze;
   /** Game-rule config (timings, lives, friendly fire, team flag + teams, drones). */
   config: GameConfig;
-  /** 16-bit shared RNG seed. */
-  seed: number;
 }
 
 /**
  * Encode the SEND_DATA data block: maze-size, reload, regen, revive, lives, 3 drone
- * counts, 4096 maze bytes, team-flag, 16 team bytes, friendly-fire, seed hi/lo. Player
- * names are NOT here — they are exchanged as a ring (`midi_send_playernames`) so every
- * node contributes its own. (We keep the seed in the block; the real ST shares it
- * separately at game-start — reconciled in EPIC-18.)
+ * counts, 4096 maze bytes, team-flag, 16 team bytes, friendly-fire. Player names and the
+ * RNG seed are NOT here — both are separate ring exchanges (`midi_send_playernames` and
+ * the game-start seed exchange), so the block is byte-exact to the original `send_datas`.
  */
-export function encodeData(maze: Maze, config: GameConfig, seed: number): Uint8Array {
+export function encodeData(maze: Maze, config: GameConfig): Uint8Array {
   const out: number[] = [];
   out.push(maze.size & 0xff);
   out.push(config.reloadTime & 0xff);
@@ -52,7 +54,6 @@ export function encodeData(maze: Maze, config: GameConfig, seed: number): Uint8A
   out.push(config.teamFlag ? 1 : 0);
   for (let i = 0; i < PLAYER_MAX_COUNT; i++) out.push((config.teams[i] ?? 0) & 0xff);
   out.push(config.friendlyFire ? 1 : 0);
-  out.push((seed >> 8) & 0xff, seed & 0xff);
   return Uint8Array.from(out);
 }
 
@@ -76,7 +77,6 @@ export function decodeData(bytes: Uint8Array): GameData {
   config.teams = [];
   for (let i = 0; i < PLAYER_MAX_COUNT; i++) config.teams.push(bytes[p++]!);
   config.friendlyFire = bytes[p++] !== 0;
-  const seed = ((bytes[p++]! << 8) | bytes[p++]!) & 0xffff;
 
-  return { maze, config, seed };
+  return { maze, config };
 }

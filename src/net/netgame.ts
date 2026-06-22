@@ -11,11 +11,19 @@ import { AdaptiveTimeout } from './timing';
 export const TICK_TIMEOUT_MS = 1500;
 
 /**
- * One tick of the joystick ring (maingame.c:415-422), faithful to the send/receive
- * order: starting at `ownNumber` send our byte, step the index backwards (mod
- * `machinesOnline`), read the next player's byte into that slot, until the index
- * returns to `ownNumber`. Returns the `machinesOnline`-long joystick table — identical
- * on every node. In a ring of one the byte we send self-echoes back into our slot.
+ * One tick of the joystick ring (maingame.c:415-422). Returns the `machinesOnline`-long
+ * joystick table — identical on every node — using the original send/receive order
+ * (slot `ownNumber` first, stepping the index backwards mod `machinesOnline`). Same bytes
+ * in the same order either way; only *when* our first byte leaves differs:
+ *
+ *  - **Master (ownNumber 0)** leads the tick: send first, then read each upstream byte.
+ *  - **Slave (ownNumber ≠ 0)** follows strict lock-step: it reads the upstream byte
+ *    *before* emitting, so it never strands a byte at a master that hasn't reached its
+ *    own exchange yet. (A real ST master may still be in its preview/menu when our slave's
+ *    5s preview ends; if we led, that first byte would sit in the ST's MIDI-IN and get
+ *    flushed as stale → a permanent off-by-one. Reading first makes us wait for the ring.)
+ *
+ * In a ring of one (master, self-echo) the byte we send returns into our own slot.
  */
 export async function exchangeJoysticks(
   ch: ByteChannel,
@@ -26,12 +34,24 @@ export async function exchangeJoysticks(
 ): Promise<number[]> {
   const joy = new Array<number>(machinesOnline).fill(0);
   joy[ownNumber] = ownByte & 0xff;
-  let i = ownNumber;
+  if (ownNumber === 0) {
+    let i = 0; // master: send-first (it clocks the ring)
+    do {
+      ch.sendByte(joy[i]!);
+      if (--i < 0) i = machinesOnline - 1;
+      joy[i] = await ch.readByte(timeoutMs);
+    } while (i !== 0);
+    return joy;
+  }
+  // slave: read the upstream byte before sending — strict "one out per one in".
+  let send = ownNumber;
+  let recv = ownNumber;
   do {
-    ch.sendByte(joy[i]!);
-    if (--i < 0) i = machinesOnline - 1;
-    joy[i] = await ch.readByte(timeoutMs);
-  } while (i !== ownNumber);
+    if (--recv < 0) recv = machinesOnline - 1;
+    joy[recv] = await ch.readByte(timeoutMs); // receive first
+    ch.sendByte(joy[send]!); // then forward our slot (own byte on the first pass)
+    if (--send < 0) send = machinesOnline - 1;
+  } while (send !== ownNumber);
   return joy;
 }
 

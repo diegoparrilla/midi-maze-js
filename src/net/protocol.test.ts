@@ -26,13 +26,12 @@ function sampleConfig(): GameConfig {
   return config;
 }
 
-describe('SEND_DATA data codec (no names — those are a ring exchange)', () => {
-  it('round-trips maze, config and seed', () => {
+describe('SEND_DATA data codec (no names, no seed — both are ring exchanges)', () => {
+  it('round-trips maze and config', () => {
     const maze = sampleMaze();
     const config = sampleConfig();
-    const decoded = decodeData(encodeData(maze, config, 0xbeef));
+    const decoded = decodeData(encodeData(maze, config));
 
-    expect(decoded.seed).toBe(0xbeef);
     expect(decoded.maze.size).toBe(14);
     expect([...decoded.maze.data]).toEqual([...maze.data]); // incl. signed -1
     expect(decoded.config.reloadTime).toBe(30);
@@ -45,8 +44,8 @@ describe('SEND_DATA data codec (no names — those are a ring exchange)', () => 
     expect(decoded.config.friendlyFire).toBe(true);
   });
 
-  it('lays bytes out in the documented order', () => {
-    const b = encodeData(sampleMaze(), sampleConfig(), 0xbeef);
+  it('lays bytes out in the documented order (byte-exact to send_datas, no seed)', () => {
+    const b = encodeData(sampleMaze(), sampleConfig());
     let p = 0;
     expect(b[p++]).toBe(14); // maze-size
     expect(b[p++]).toBe(30); // reload
@@ -58,9 +57,10 @@ describe('SEND_DATA data codec (no names — those are a ring exchange)', () => 
     p += MAZE_BYTES;
     expect(b[p++]).toBe(1); // team-flag
     p += 16; // teams
-    expect(b[p++]).toBe(1); // friendly-fire
-    expect([b[p++], b[p++]]).toEqual([0xbe, 0xef]); // seed hi/lo
+    expect(b[p++]).toBe(1); // friendly-fire — last byte (the seed is a separate exchange)
     expect(p).toBe(b.length);
     expect(b.length).toBe(SEND_DATA_FIXED);
+    // byte-exact to the original send_datas: 8 config + 4096 maze + 17 team + 1 ff, no seed
+    expect(SEND_DATA_FIXED).toBe(4122);
   });
 });
