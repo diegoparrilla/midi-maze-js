@@ -1010,7 +1010,9 @@ async function listRooms(): Promise<void> {
   const rooms = await fetchRooms(netConfig.url);
   conRoomList.innerHTML = '';
   if (!rooms) {
-    conMsg.textContent = 'rooms unavailable (using default room is fine)';
+    // Almost always CORS: the orchestrator must send Access-Control-Allow-Origin on
+    // /rooms for a cross-origin browser fetch. Joining by typed key still works.
+    conMsg.textContent = 'rooms unavailable (orchestrator CORS?) — type a room or use default';
     conRoomList.hidden = true;
     return;
   }
