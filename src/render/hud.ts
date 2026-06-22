@@ -3,8 +3,9 @@
 import ballRaw from '../assets/generated/ball-shapes.json';
 import faceRaw from '../assets/generated/face-shapes.json';
 import paletteRaw from '../assets/generated/palette.json';
-import { VIEW_SCREEN_X, VIEW_SCREEN_Y } from './projection';
 import type { World } from '../sim/world';
+import { blitRuns } from './blit';
+import { VIEW_SCREEN_X, VIEW_SCREEN_Y } from './projection';
 
 interface Shape {
   scale: number;
@@ -87,7 +88,7 @@ function vline(ctx: CanvasRenderingContext2D, y1: number, y2: number, x: number)
 }
 
 /** Blit a 1bpp mask (row-major 16-bit words, MSB = leftmost) in a solid colour,
- *  top-left at absolute screen (sx, sy). */
+ *  top-left at absolute screen (sx, sy), run-length batched (EPIC-23). */
 function blitMask(
   ctx: CanvasRenderingContext2D,
   rows: number[],
@@ -98,14 +99,7 @@ function blitMask(
   color: number,
 ): void {
   ctx.fillStyle = PAL[color]!;
-  for (let r = 0; r < height; r++) {
-    const base = r * widthWords;
-    for (let c = 0; c < widthWords * 16; c++) {
-      if ((rows[base + (c >> 4)]! >> (15 - (c & 15))) & 1) {
-        ctx.fillRect(sx + c, sy + r, 1, 1);
-      }
-    }
-  }
+  blitRuns(ctx, rows, 0, widthWords, height, sx, sy);
 }
 
 /** Firing crosshair (maingame.c), shown when reloaded, in the player's own colour. */

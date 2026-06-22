@@ -337,6 +337,22 @@ body {
 .con-actions {
   gap: 10px;
 }
+.con-rooms {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  max-height: 96px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+.con-rooms li {
+  padding: 3px 6px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.15);
+}
+.con-rooms li:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
 
 /* Waiting-for-host message. */
 .wait-msg {

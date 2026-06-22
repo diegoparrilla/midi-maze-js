@@ -4,6 +4,7 @@
 import ballRaw from '../assets/generated/ball-shapes.json';
 import faceRaw from '../assets/generated/face-shapes.json';
 import paletteRaw from '../assets/generated/palette.json';
+import { blitRuns } from './blit';
 import { VIEW_FLOOR_HEIGHT, VIEW_SCREEN_X, VIEW_SCREEN_Y, VIEW_SKY_HEIGHT } from './projection';
 
 interface Shape {
@@ -62,7 +63,8 @@ function shapeIndexFromSize(size: number): number {
   return size <= 16 ? 24 - size : 8 - ((size - 15) >> 1);
 }
 
-/** Blit a 1bpp mask (row-major 16-bit words, MSB = leftmost) in a solid colour. */
+/** Blit a 1bpp mask (row-major 16-bit words, MSB = leftmost) in a solid colour,
+ *  view-relative, run-length batched (EPIC-23). */
 function blitMask(
   ctx: CanvasRenderingContext2D,
   rows: number[],
@@ -74,15 +76,7 @@ function blitMask(
   color: number,
 ): void {
   ctx.fillStyle = PAL[color]!;
-  for (let r = 0; r < height; r++) {
-    const base = (startRow + r) * widthWords;
-    for (let c = 0; c < widthWords * 16; c++) {
-      const word = rows[base + (c >> 4)]!;
-      if ((word >> (15 - (c & 15))) & 1) {
-        ctx.fillRect(VIEW_SCREEN_X + sx + c, VIEW_SCREEN_Y + topY + r, 1, 1);
-      }
-    }
-  }
+  blitRuns(ctx, rows, startRow, widthWords, height, VIEW_SCREEN_X + sx, VIEW_SCREEN_Y + topY);
 }
 
 /**
