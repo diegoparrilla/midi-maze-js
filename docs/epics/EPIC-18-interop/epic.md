@@ -2,7 +2,7 @@
 id: EPIC-18
 iteration: 5
 title: Mixed-ring interop
-status: in-progress
+status: done
 ---
 
 ## Goal

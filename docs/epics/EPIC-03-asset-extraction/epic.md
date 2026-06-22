@@ -2,7 +2,7 @@
 id: EPIC-03
 iteration: 1
 title: Asset & maze extraction + reference vectors
-status: in-progress
+status: done
 ---
 
 ## Goal
