@@ -1,6 +1,7 @@
 // HUD overlay (maingame.c crosshair, happyind.c health face, notebrd.c score).
 // Drawn at the colour-mode HUD window positions. Visual only (no golden vectors).
 import ballRaw from '../assets/generated/ball-shapes.json';
+import faceRaw from '../assets/generated/face-shapes.json';
 import paletteRaw from '../assets/generated/palette.json';
 import { VIEW_SCREEN_X, VIEW_SCREEN_Y } from './projection';
 import type { World } from '../sim/world';
@@ -15,6 +16,7 @@ const PAL = (paletteRaw as { ste: number; rgb: [number, number, number] }[]).map
   ({ rgb }) => `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`,
 );
 const BALL = ballRaw as Shape[];
+const FACE = faceRaw as Shape[][];
 
 // Per-player colours (maingame.c color_ply_back / color_ply_frame).
 const COLOR_PLY_BACK = [8, 3, 9, 13, 11, 12, 10, 15, 8, 3, 9, 13, 11, 12, 10, 15];
@@ -63,6 +65,22 @@ const HAPPY_X = 128;
 const HAPPY_Y = 16;
 const SCORE_X = 192;
 const SCORE_Y = 10;
+// Kills window / pop chart (popchart.c; rungame.c:48 → color-rez window at X:192 Y:66,
+// W:121 H:37). It holds a boot splash in our dashboard, so we clear it like the original
+// (maingame.c:178). Small dead-face shape index 16 (≈13px). Coords are pixel-tunable.
+const KILLS_X = 192;
+const KILLS_Y = 66;
+const KILLS_W = 121;
+const KILLS_H = 37;
+const KILLS_SHAPE = 16;
+const COLOR_BLACK = 0;
+// "Forbidden" symbol drawn red over each killed face (smileybuster_img, moreshap.c,
+// after flip_crossedsmil_img): 15 rows × 2 words (≈18px wide). A circle with a slash.
+const SMILEYBUSTER = [
+  0x03f0, 0x0000, 0x0ffc, 0x0000, 0x3e1f, 0x0000, 0x7803, 0x8000, 0x6c01, 0x8000, 0xc600, 0xc000,
+  0xc380, 0xc000, 0xc1c0, 0xc000, 0xc0e0, 0xc000, 0xc070, 0xc000, 0x6031, 0x8000, 0x701f, 0x8000,
+  0x3c0f, 0x0000, 0x0ffc, 0x0000, 0x03f0, 0x0000,
+];
 
 function vline(ctx: CanvasRenderingContext2D, y1: number, y2: number, x: number): void {
   ctx.fillRect(VIEW_SCREEN_X + x, VIEW_SCREEN_Y + y1, 1, y2 - y1 + 1);
@@ -137,5 +155,31 @@ export function drawScoreboard(ctx: CanvasRenderingContext2D, world: World): voi
     }
     ctx.fillStyle = PAL[COLOR_PLY_BACK[i & 15]!]!;
     ctx.fillRect(SCORE_X + x, SCORE_Y + y - 3, 4, 4); // note head
+  }
+}
+
+/**
+ * Kills window / pop chart (popchart.c `add_one_smily`): the window is cleared, then one
+ * dead face per kill the local player scored — the killed player's body (back colour) +
+ * face (frame colour) with the red "forbidden" symbol (smileybuster) over it. Two rows of
+ * five (max 10), filled top-left → bottom-right; `victims[k]` is the player killed for k+1.
+ */
+export function drawKillsWindow(ctx: CanvasRenderingContext2D, victims: number[]): void {
+  // Clear the window first — our dashboard art has a boot splash here (maingame.c:178).
+  ctx.fillStyle = PAL[COLOR_BLACK]!;
+  ctx.fillRect(KILLS_X, KILLS_Y, KILLS_W, KILLS_H);
+
+  const ball = BALL[KILLS_SHAPE]!;
+  const face = FACE[KILLS_SHAPE]![0]!;
+  const ww = ball.widthWords;
+  const h = ball.height;
+  const n = Math.min(victims.length, 10);
+  for (let k = 0; k < n; k++) {
+    const victim = victims[k]! & 15;
+    const x = KILLS_X + 1 + (k % 5) * 25; // two rows of five, left→right
+    const y = KILLS_Y + (k < 5 ? 3 : 19);
+    blitMask(ctx, ball.rows, ww, h, x, y, COLOR_PLY_BACK[victim]!);
+    blitMask(ctx, face.rows, ww, h, x, y, COLOR_PLY_FRAME[victim]!);
+    blitMask(ctx, SMILEYBUSTER, 2, 15, x - 1, y - 1, COLOR_RED); // forbidden symbol, centred (15px over 13px)
   }
 }
