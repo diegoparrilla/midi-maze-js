@@ -24,10 +24,14 @@ Let a player pick a room from a list instead of typing the key. The orchestrator
 
 **Automated:** `roomsEndpoint` / `parseRooms` / `fetchRooms` unit-tested (URL mapping,
 envelope + alias tolerance, fetch failure → null); build/lint green. **Manual (user):**
-against the live orchestrator, Rooms lists the active rooms and selecting one joins it.
+against the live orchestrator, Rooms lists the active rooms and selecting one joins it —
+**requires CORS on the orchestrator** (see Notes).
 
 ## Notes
 
-Best-effort by design: an orchestrator without `/rooms` (or a CORS-restricting proxy) just
-yields "rooms unavailable (using default room is fine)" — the keyed/default join path is
-unchanged. Closes EPIC-23.
+The `/rooms` fetch is **cross-origin** (browser page → orchestrator host), so the
+orchestrator must send `Access-Control-Allow-Origin` on its HTTP responses — added to
+`md-MIDI2IP` `orchestrator.py` `_http_send` (`*`, safe: open read-only endpoints; writes
+still need the admin key). Without it the browser blocks the fetch and the screen shows
+"rooms unavailable (orchestrator CORS?)"; the keyed/default join path is unaffected.
+Closes EPIC-23.
