@@ -67,3 +67,5 @@ __pycache__/
 node_modules/
 *.tsbuildinfo
 npm-debug.log*
+secrets.sh
+
