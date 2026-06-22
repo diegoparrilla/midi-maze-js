@@ -15,6 +15,7 @@ import {
 } from './game/config';
 import { findWinner, GameFlow, GAMEOVER_TICKS } from './game/flow';
 import { KillLog } from './game/kills';
+import { FixedTimestep, TICK_INTERVAL_MS } from './game/pacer';
 import { Input, type Control } from './game/input';
 import { loadMazeById, MAZE_OPTIONS } from './game/mazes';
 import {
@@ -23,7 +24,7 @@ import {
   isValidUrl,
   type NetConfig,
 } from './net/netconfig';
-import { type NetEnd, NetGame, TICK_TIMEOUT_MS } from './net/netgame';
+import { type NetEnd, NetGame } from './net/netgame';
 import { MIDI_NAME_DIALOG, MIDI_TERMINATE_GAME } from './net/protocol';
 import { countMaster, type CountResult, electMaster } from './net/ring';
 import { connectIdle, type IdleLink } from './net/session';
@@ -37,6 +38,13 @@ import {
   setSendWindow,
   type SetupResult,
 } from './net/setup';
+import {
+  AdaptiveTimeout,
+  bandFromParams,
+  SETUP_TIMEOUT_MS,
+  SLAVE_WAIT_MS,
+  type TimeoutBand,
+} from './net/timing';
 import type { TransportStatus } from './net/transport';
 import { drawCrosshair, drawHappyIndicator, drawKillsWindow, drawScoreboard } from './render/hud';
 import { drawMap2D } from './render/map2d';
@@ -131,12 +139,19 @@ const killLog = new KillLog(); // the camera player's kills, for the pop chart (
 let prevReload = 0; // camera player's reload last tick, for shot-fired edge detection (EPIC-21)
 // Live interop telemetry for the debug overlay (EPIC-18): the last joystick ring table,
 // tick, and whether the ring timed out — to localize a desync against a real ST bridge.
-const netTelemetry = { tick: 0, joy: [] as number[], timedOut: false, tickMs: 0 };
+const netTelemetry = { tick: 0, joy: [] as number[], timedOut: false, tickMs: 0, timeoutMs: 0 };
 
 // EPIC-18: let a real-ST-bridge bring-up drop the windowed-echo burst size without a
 // rebuild (`?sendWindow=N`) if the handshake stalls on the bridge's shallow MIDI buffer.
-const sendWindowParam = Number(new URLSearchParams(location.search).get('sendWindow'));
+const urlParams = new URLSearchParams(location.search);
+const sendWindowParam = Number(urlParams.get('sendWindow'));
 if (sendWindowParam) setSendWindow(sendWindowParam);
+// EPIC-19: the in-game per-tick read deadline adapts to measured RTT, within a band the
+// venue can tune (`?tickTimeout=` ceiling, `?tickFloor=` floor; set equal to pin a fixed).
+const netTickBand: TimeoutBand = bandFromParams(urlParams);
+// EPIC-19: pace the sim to a fixed rate so display refresh (e.g. 120 Hz) doesn't speed it up.
+const soloPacer = new FixedTimestep();
+const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /** Play the local shot/hit SFX for the camera player after the world advanced. */
 function playSfx(): void {
@@ -175,10 +190,10 @@ function humanCount(): number {
   return isNetwork && netCount ? netCount.machinesOnline : HUMAN_COUNT;
 }
 
-// Handshake patience: the master drives COUNT/START tightly; a slave waits — possibly
-// for minutes — for the master to start, so its reads are patient (cancel ends it).
-const HOST_SETUP_MS = 8000;
-const SLAVE_WAIT_MS = 600_000;
+// Handshake patience: the master drives COUNT/START tightly (SETUP_TIMEOUT_MS); a slave
+// waits — possibly for minutes — for the master to start (SLAVE_WAIT_MS); both centralized
+// in net/timing.ts (EPIC-19). The in-game per-tick deadline adapts to RTT (see netTickBand).
+const HOST_SETUP_MS = SETUP_TIMEOUT_MS;
 // Start-map preview: the original's "5s delay to allow the player to see the map"
 // (maingame.c:218, 300 Vsync). Wall-clock so it's exactly 5s regardless of frame rate.
 const PREVIEW_MS = 5000;
@@ -382,9 +397,10 @@ function buildDebugInfo(): string {
   if (netActive || idle) {
     const ctrl = idle ? idle.channel.lastControlByte : -1;
     const rtt = Math.round(netTelemetry.tickMs);
-    const nearLimit = netTelemetry.tickMs > TICK_TIMEOUT_MS * 0.66; // headroom warning (C-01)
+    const deadline = netTelemetry.timeoutMs || netTickBand.ceilingMs; // adaptive per-tick deadline
+    const nearLimit = netTelemetry.tickMs > deadline * 0.66; // headroom warning (C-01)
     L.push(`tick         : ${netTelemetry.tick}${netTelemetry.timedOut ? '  RING TIMEOUT' : ''}`);
-    L.push(`ring rtt     : ${rtt}ms / ${TICK_TIMEOUT_MS}ms${nearLimit ? '  NEAR LIMIT' : ''}`);
+    L.push(`ring rtt     : ${rtt}ms / ${deadline}ms${nearLimit ? '  NEAR LIMIT' : ''}`);
     L.push(`send window  : ${getSendWindow()}`);
     L.push(`last ctrl tx : 0x${hex(ctrl)}`);
     L.push(`joystick ring: [${netTelemetry.joy.map(hex).join(' ')}]`);
@@ -469,6 +485,7 @@ function startSolo(): void {
   world = newWorld(config);
   killLog.reset();
   prevReload = 0;
+  soloPacer.reset();
   flow.startGame();
 }
 
@@ -526,6 +543,7 @@ async function runNetSession(role: 'host' | 'join'): Promise<void> {
   netTelemetry.joy = [];
   netTelemetry.timedOut = false;
   netTelemetry.tickMs = 0;
+  netTelemetry.timeoutMs = 0;
 
   // Map preview: a fixed 5s look at the start map (maingame.c:218), synchronised by
   // the handshake completing on every node.
@@ -543,6 +561,7 @@ async function runNetSession(role: 'host' | 'join'): Promise<void> {
     ownNumber: setup.ownNumber,
     machinesOnline: setup.machinesOnline,
     localInput: () => (quitRequested ? MIDI_TERMINATE_GAME : input.joyByte()),
+    adaptive: new AdaptiveTimeout(netTickBand),
     onTick: () => {
       const p = world.players[cameraIndex]!;
       killLog.update(p.ply_score, p.ply_looser); // record kills for the pop chart
@@ -550,6 +569,7 @@ async function runNetSession(role: 'host' | 'join'): Promise<void> {
       netTelemetry.tick = game.tick;
       netTelemetry.joy = game.lastJoy;
       netTelemetry.tickMs = game.lastTickMs;
+      netTelemetry.timeoutMs = game.lastTimeoutMs;
       renderWorld();
       setStatus(`${roleLabel} · field (${p.ply_x >> 7},${p.ply_y >> 7}) · score ${p.ply_score}/10`);
     },
@@ -558,15 +578,19 @@ async function runNetSession(role: 'host' | 'join'): Promise<void> {
   let end: NetEnd | null = null;
   try {
     do {
+      const tickStart = performance.now();
       end = await game.runTick(link.channel);
       // A *slave's* TERMINATE can't reach joy[0], so it just leaves its own loop. The
       // *master* must NOT short-circuit here: it injects TERMINATE through localInput (→
       // joy[0]) on the next tick, and runTick drives the two-step confirm so the slave/ST
       // ends cleanly. Cutting the master off early would never put TERMINATE on the wire.
       if (!end && quitRequested && role !== 'host') end = 'terminated';
-      // Pace the ring to the display refresh, like the solo loop (one step per frame);
-      // without this the lock-step runs flat-out over a fast local link.
-      if (!end) await nextFrame();
+      // Pace each tick to a fixed interval (EPIC-19): on a fast browser-only ring this caps
+      // the rate to TICK_HZ; on a slow ring runTick already exceeds it, so there's no wait.
+      if (!end) {
+        const remaining = TICK_INTERVAL_MS - (performance.now() - tickStart);
+        if (remaining > 0) await delay(remaining);
+      }
     } while (!end);
   } catch {
     end = 'timeout';
@@ -580,7 +604,7 @@ async function runNetSession(role: 'host' | 'join'): Promise<void> {
     for (let t = 0; t < GAMEOVER_TICKS; t++) {
       flow.timer = GAMEOVER_TICKS - t; // counts down so drawGameOver's end animation advances
       renderWorld();
-      await nextFrame();
+      await delay(TICK_INTERVAL_MS); // fixed-rate so the ~3s end animation is refresh-independent
     }
     flow.timer = 0;
   }
@@ -1178,15 +1202,19 @@ function frame(): void {
     return;
   }
 
-  // Solo (offline) loop: advance the flow, step the sim, render.
-  const stepNow = flow.tick(world);
-  if (stepNow) {
-    const joyTable = [input.joyByte(), 0, 0, 0]; // player 0 is the camera; drones filled by step()
-    const dronesActive = world.playerAndDroneCount > world.machinesOnline ? 1 : 0;
-    step(world, joyTable, dronesActive);
-    const me = world.players[cameraIndex]!;
-    killLog.update(me.ply_score, me.ply_looser); // record kills for the pop chart
-    playSfx();
+  // Solo (offline) loop: advance the flow + sim at a fixed rate (paced for high-refresh
+  // displays, EPIC-19), render every frame. A backgrounded tab's backlog is dropped by the
+  // pacer's catch-up cap.
+  const steps = soloPacer.advance(performance.now());
+  for (let s = 0; s < steps; s++) {
+    if (flow.tick(world)) {
+      const joyTable = [input.joyByte(), 0, 0, 0]; // player 0 is the camera; drones filled by step()
+      const dronesActive = world.playerAndDroneCount > world.machinesOnline ? 1 : 0;
+      step(world, joyTable, dronesActive);
+      const me = world.players[cameraIndex]!;
+      killLog.update(me.ply_score, me.ply_looser); // record kills for the pop chart
+      playSfx();
+    }
   }
   renderWorld();
 

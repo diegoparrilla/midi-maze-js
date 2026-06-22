@@ -2,7 +2,7 @@
 id: EPIC-19
 iteration: 5
 title: Latency/timeout tuning
-status: todo
+status: done
 ---
 
 ## Goal
@@ -11,7 +11,11 @@ Tune the lock-step pump for internet latency without breaking the MIDI timeout m
 
 ## Stories
 
-Authored at the start of iteration 5 (just-in-time, per ITERATIONS.md).
+- STORY-01: Adaptive lock-step timeout — the per-tick read deadline adapts to measured RTT
+  (EWMA, clamped to a band), centralized + URL-tunable; the timeout model (missing byte →
+  end) is unchanged. `done`.
+- STORY-02: Fixed-rate pump pacing — decouple the sim tick rate from display refresh
+  (`FixedTimestep` at 60 Hz) so high-refresh panels don't run the game ~2× fast. `done`.
 
 ## Notes
 
