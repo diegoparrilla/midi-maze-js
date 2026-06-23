@@ -7,6 +7,15 @@ describe('roomsEndpoint', () => {
     expect(roomsEndpoint('wss://maze.example/ws')).toBe('https://maze.example/rooms');
   });
 
+  it('derives the same-origin /rooms from the production /ws URL', () => {
+    expect(roomsEndpoint('wss://midimaze.sidecartridge.com/ws')).toBe(
+      'https://midimaze.sidecartridge.com/rooms',
+    );
+    expect(roomsEndpoint('ws://midimaze.sidecartridge.com/ws')).toBe(
+      'http://midimaze.sidecartridge.com/rooms',
+    );
+  });
+
   it('drops any query/hash', () => {
     expect(roomsEndpoint('wss://h/ws?room=X#y')).toBe('https://h/rooms');
   });

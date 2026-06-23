@@ -15,9 +15,22 @@ export interface NetConfig {
 /** The orchestrator's default WebSocket port (D-08). */
 export const ORCHESTRATOR_PORT = 5006;
 
-/** A sensible default URL: the orchestrator on the page's own host (LAN dev setup). */
-export function defaultOrchestratorUrl(hostname = 'localhost'): string {
-  return `ws://${hostname}:${ORCHESTRATOR_PORT}/`;
+/** The production demo host: a single Cloudflare-proxied origin that reverse-proxies
+ *  `/ws` → the orchestrator WebSocket and `/rooms` → its REST. */
+export const PRODUCTION_HOST = 'midimaze.sidecartridge.com';
+
+/**
+ * The default orchestrator WebSocket URL for the page. The scheme follows the page: an
+ * `https:` page gets `wss://` (an `http:` page `ws://`) — a secure page can't open an
+ * insecure socket. On the production host (`midimaze.sidecartridge.com`) the orchestrator
+ * shares the origin at the `/ws` path (no port); anywhere else (localhost/LAN dev) it's
+ * the orchestrator on the page's own host at `:5006`. `/rooms` is then derived from this
+ * URL by `roomsEndpoint` (scheme-swapped, path → `/rooms`).
+ */
+export function defaultOrchestratorUrl(hostname = 'localhost', protocol = 'http:'): string {
+  const ws = protocol === 'https:' ? 'wss:' : 'ws:';
+  if (hostname === PRODUCTION_HOST) return `${ws}//${PRODUCTION_HOST}/ws`;
+  return `${ws}//${hostname}:${ORCHESTRATOR_PORT}/`;
 }
 
 export function defaultNetConfig(): NetConfig {

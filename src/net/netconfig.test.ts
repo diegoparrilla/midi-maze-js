@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { defaultNetConfig, defaultOrchestratorUrl, isValidNet, isValidUrl } from './netconfig';
+import {
+  defaultNetConfig,
+  defaultOrchestratorUrl,
+  isValidNet,
+  isValidUrl,
+  PRODUCTION_HOST,
+} from './netconfig';
 
 describe('NetConfig', () => {
   it('defaults to solo with the orchestrator URL', () => {
@@ -9,8 +15,15 @@ describe('NetConfig', () => {
     expect(c.url).toMatch(/^ws:\/\/.+:5006\/$/);
   });
 
-  it('builds the orchestrator URL from a hostname', () => {
-    expect(defaultOrchestratorUrl('192.168.1.5')).toBe('ws://192.168.1.5:5006/');
+  it('builds the orchestrator URL from a hostname (dev: host:5006, scheme follows page)', () => {
+    expect(defaultOrchestratorUrl('192.168.1.5')).toBe('ws://192.168.1.5:5006/'); // default http:
+    expect(defaultOrchestratorUrl('192.168.1.5', 'http:')).toBe('ws://192.168.1.5:5006/');
+    expect(defaultOrchestratorUrl('192.168.1.5', 'https:')).toBe('wss://192.168.1.5:5006/');
+  });
+
+  it('uses the same-origin /ws path (no port) on the production host', () => {
+    expect(defaultOrchestratorUrl(PRODUCTION_HOST, 'http:')).toBe(`ws://${PRODUCTION_HOST}/ws`);
+    expect(defaultOrchestratorUrl(PRODUCTION_HOST, 'https:')).toBe(`wss://${PRODUCTION_HOST}/ws`);
   });
 
   it('solo is always valid; host/join need a ws URL', () => {
