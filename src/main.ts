@@ -170,7 +170,7 @@ let orientationBlocked = false;
 // Networking (EPIC-24). Entry flow: mode menu → (network) connect screen → idle link →
 // election (master/slave) → master: ready (P → preferences → Start) / slave: wait → game.
 const netConfig: NetConfig = defaultNetConfig();
-netConfig.url = defaultOrchestratorUrl(location.hostname || 'localhost');
+netConfig.url = defaultOrchestratorUrl(location.hostname || 'localhost', location.protocol);
 let cameraIndex = 0; // the local player's index (0 for solo, ownNumber when networked)
 let netActive = false; // true while connecting / previewing / playing a networked game
 let quitRequested = false; // local quit during net play → inject TERMINATE_GAME
