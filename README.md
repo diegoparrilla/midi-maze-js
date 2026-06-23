@@ -8,6 +8,14 @@ The goal is to play MIDI Maze in a mobile/desktop browser and — over a WebSock
 link to the [`md-MIDI2IP`](https://github.com/diegoparrilla/md-MIDI2IP) ring
 orchestrator — share a ring with real Atari STs.
 
+## Try it
+
+Play it at **<https://midimaze.sidecartridge.com>**. Solo (vs drones) always works.
+
+The **networked** mode will most likely **not** work for you: it talks to an orchestrator
+that is only online for the duration of this talk and then taken down —
+[OpenSouthCode 2026](https://www.opensouthcode.org/conferences/opensouthcode2026/program/proposals/1085).
+
 ## Building
 
 Requires Node 20+.
@@ -152,3 +160,35 @@ Work is organised as iterations → epics → stories → tasks under
 The authoritative reference for game behaviour, file formats, and the MIDI protocol
 is the reconstructed C in the sarnau repo above (the original game loads `.MAZ`
 ASCII mazes; `.MZE` is MIDI Maze 2 and is not used here).
+
+## Acknowledgements
+
+This is an experiment, and it simply could not exist without the prior work of others:
+
+- The reverse-engineered, reconstructed C source by **Markus Fritze (@sarnau)** —
+  <https://github.com/sarnau/AtariST-MIDIMaze-Source>. It is the authoritative reference
+  this port follows line-by-line. Thank you.
+- The original **MIDI Maze**, developed by **Xanth Software F/X** and published by
+  **Hybrid Arts** in **1987**. It was a genuine landmark: up to **16 Atari STs**
+  daisy-chained through their MIDI ports into a ring, sharing one first-person arena of
+  grinning smiley-faces — arguably the **first networked multiplayer first-person
+  "deathmatch"**, years before *Doom* (1993), and later ported to the Game Boy as
+  *Faceball 2000*. Deep respect and thanks to its creators.
+  ([MIDI Maze on Wikipedia](https://en.wikipedia.org/wiki/MIDI_Maze).)
+- This browser re-creation was built with **Claude Code (Claude Opus 4.8)** under a *lot*
+  of hands-on direction from me ([Diego Parrilla](https://github.com/diegoparrilla)), and
+  wired to play against real Atari STs through the **SidecarTridge Multidevice**
+  microfirmware via the `md-MIDI2IP` orchestrator —
+  <https://github.com/sidecartridge/md-MIDI2IP>.
+
+## License
+
+Honestly? We're **not sure**. What is the license of the original Hybrid Arts / Xanth
+Software F/X work? Of @sarnau's reconstruction? Who knows. So we have no intention of
+claiming ownership and we want to **respect the original licence and the rights of the
+original authors**.
+
+Please treat this repository as an **experiment for technological study** — an analysis of
+how far AI can go in re-building a working application from existing code — and **not** as
+a product or a redistribution of the original game. If you hold rights to any of the
+underlying work and have concerns, please get in touch and we'll act accordingly.
