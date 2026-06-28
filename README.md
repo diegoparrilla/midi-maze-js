@@ -5,7 +5,7 @@ ported from the reconstructed C source:
 https://github.com/sarnau/AtariST-MIDIMaze-Source
 
 The goal is to play MIDI Maze in a mobile/desktop browser and — over a WebSocket
-link to the [`md-MIDI2IP`](https://github.com/diegoparrilla/md-MIDI2IP) ring
+link to the [`md-MIDI2IP`](https://github.com/sidecartridge/md-MIDI2IP) ring
 orchestrator — share a ring with real Atari STs.
 
 ## Try it
